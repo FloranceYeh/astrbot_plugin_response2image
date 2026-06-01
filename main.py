@@ -106,7 +106,6 @@ class Response2Image(Star):
     ) -> None:
         """
         文生图
-        aiimg <提示词> [--model 模型]
 
         Args:
             prompt: 生成图片的提示词，支持使用 --model 指定模型。
@@ -118,11 +117,10 @@ class Response2Image(Star):
     async def llm_r2i_aiedit(
         self,
         event: AstrMessageEvent,
-        prompt: str
+        prompt: str = "",
     ) -> None:
         """
         改图
-        aiedit <提示词> [--ref 图片URL] [--model 模型]
 
         Args:
             prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
@@ -130,15 +128,14 @@ class Response2Image(Star):
         async for result in self._generate(event, prompt, mode="edit"):
             yield result
 
-    @filter.llm_tool(name="r2i_selfie")
+    @filter.llm_tool()
     async def llm_r2i_selfie(
         self,
         event: AstrMessageEvent,
-        prompt: str
+        prompt: str = "",
     ) -> None:
         """
         自拍
-        selfie <提示词> [--ref 图片URL] [--model 模型]
 
         Args:
             prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
