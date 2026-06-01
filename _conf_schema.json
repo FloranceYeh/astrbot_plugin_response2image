@@ -1,0 +1,25 @@
+{
+  "base_url": {
+    "description": "Base URL",
+    "type": "string",
+    "hint": "例如 https://api.openai.com",
+    "default": ""
+  },
+  "api_key": {
+    "description": "API Key",
+    "type": "string",
+    "hint": "第三方服务密钥",
+    "default": ""
+  },
+  "model": {
+    "description": "模型 ID",
+    "type": "string",
+    "hint": "例如 gpt-4o-mini",
+    "default": ""
+  },
+  "timeout_seconds": {
+    "description": "请求超时（秒）",
+    "type": "int",
+    "default": 120
+  }
+}
