@@ -118,8 +118,9 @@ class Response2Image(Star):
             return
 
         event_refs = self._extract_refs_from_event(event) if mode in {"auto", "edit", "selfie"} else []
+        config_refs = self._get_selfie_refs_from_config() if mode == "selfie" else []
         if mode == "selfie" and not ref_urls and not event_refs:
-            ref_urls = self._list_selfie_ref_paths()
+            ref_urls = config_refs or self._list_selfie_ref_paths()
 
         if mode == "text" and (ref_urls or event_refs):
             yield event.plain_result("文生图模式不使用参考图，请改用改图或自拍。")
@@ -458,6 +459,26 @@ class Response2Image(Star):
 
     def _selfie_ref_dir(self) -> Path:
         return self.data_dir / "selfie_refs"
+
+    def _get_selfie_refs_from_config(self) -> list[str]:
+        raw = self._config_get("selfie_reference_images", [])
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            candidates = [raw]
+        elif isinstance(raw, (list, tuple, set)):
+            candidates = [str(item) for item in raw if item]
+        else:
+            candidates = []
+        paths: list[str] = []
+        for item in candidates:
+            value = str(item).strip()
+            if not value:
+                continue
+            path = Path(value)
+            if path.is_file():
+                paths.append(str(path))
+        return paths
 
     def _list_selfie_ref_paths(self) -> list[str]:
         ref_dir = self._selfie_ref_dir()

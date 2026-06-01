@@ -21,5 +21,14 @@
     "description": "请求超时（秒）",
     "type": "int",
     "default": 120
+  },
+  "selfie_reference_images": {
+    "description": "自拍参考图",
+    "type": "list",
+    "items": {
+      "type": "file",
+      "description": "参考图"
+    },
+    "default": []
   }
 }
