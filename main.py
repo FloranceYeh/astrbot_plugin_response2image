@@ -30,10 +30,10 @@ class Response2Image(Star):
     async def r2i_help(self, event: AstrMessageEvent):
         yield event.plain_result(
             "r2i-Response2Image\n"
-            "• /r2i img <提示词> [--ref 图片URL] [--model 模型]      自动判断文生图/改图\n"
-            "• /r2i aiimg <提示词> [--model 模型]      文生图\n"
-            "• /r2i aiedit <提示词> [--ref 图片URL] [--model 模型]      图生图\n"
-            "• /r2i selfie <提示词> [--ref 图片URL] [--model 模型]      自拍\n"
+            "• /r2i img <提示词> [--ref 图片URL]      自动判断文生图/改图\n"
+            "• /r2i aiimg <提示词>       文生图\n"
+            "• /r2i aiedit <提示词> [--ref 图片URL]      图生图\n"
+            "• /r2i selfie <提示词> [--ref 图片URL]      自拍\n"
             "• /r2i selfie_ref set       发送或引用图片后执行\n"
             "• /r2i selfie_ref list      查看已保存的参考图\n"
             "• /r2i selfie_ref clear     清空所有参考图\n"
@@ -108,7 +108,7 @@ class Response2Image(Star):
         自动判断文生图或改图。
 
         Args:
-            prompt(string): 图片生成提示词，支持使用 --ref 和 --model 参数。
+            prompt(string): 图片生成提示词，支持使用 --ref。
         """
         async for result in self._generate(event, prompt, mode="auto"):
             yield result
@@ -123,7 +123,7 @@ class Response2Image(Star):
         文生图。
 
         Args:
-            prompt(string): 图片生成提示词，支持使用 --model 参数。
+            prompt(string): 图片生成提示词。
         """
         async for result in self._generate(event, prompt, mode="text"):
             yield result
@@ -138,7 +138,7 @@ class Response2Image(Star):
         改图。
 
         Args:
-            prompt(string): 图片编辑提示词，支持使用 --ref 和 --model 参数。
+            prompt(string): 图片编辑提示词，支持使用 --ref。
         """
         async for result in self._generate(event, prompt, mode="edit"):
             yield result
@@ -153,7 +153,7 @@ class Response2Image(Star):
         自拍。
 
         Args:
-            prompt(string): 自拍图提示词，支持使用 --ref 和 --model 参数。
+            prompt(string): 自拍图提示词，支持使用 --ref。
         """
         async for result in self._generate(event, prompt, mode="selfie"):
             yield result
@@ -175,7 +175,7 @@ class Response2Image(Star):
 
     async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
         try:
-            prompt, ref_urls, model_override = self._parse_prompt(raw_prompt)
+            prompt, ref_urls = self._parse_prompt(raw_prompt)
         except ValueError as exc:
             yield event.plain_result(str(exc))
             return
@@ -183,8 +183,6 @@ class Response2Image(Star):
         base_url = str(self._config_get("base_url", "")).strip()
         api_key = str(self._config_get("api_key", "")).strip()
         model = str(self._config_get("model", "")).strip()
-        if model_override:
-            model = model_override
 
         if not base_url:
             yield event.plain_result("请在插件配置中设置 base_url。")
@@ -193,7 +191,7 @@ class Response2Image(Star):
             yield event.plain_result("请在插件配置中设置 api_key。")
             return
         if not model:
-            yield event.plain_result("请在插件配置中设置 model，或在命令中使用 --model 指定。")
+            yield event.plain_result("请在插件配置中设置 model。")
             return
 
         try:
@@ -317,14 +315,13 @@ class Response2Image(Star):
             base = base[:-3]
         return base
 
-    def _parse_prompt(self, raw: str) -> tuple[str, list[str], str | None]:
+    def _parse_prompt(self, raw: str) -> tuple[str, list[str]]:
         tokens = shlex.split(raw)
         if not tokens:
             raise ValueError("请提供提示词。")
 
         prompt_parts: list[str] = []
         ref_urls: list[str] = []
-        model_override: str | None = None
 
         i = 0
         while i < len(tokens):
@@ -335,19 +332,13 @@ class Response2Image(Star):
                 ref_urls.extend([u for u in tokens[i + 1].split(",") if u])
                 i += 2
                 continue
-            if token == "--model":
-                if i + 1 >= len(tokens):
-                    raise ValueError("缺少 --model 参数。")
-                model_override = tokens[i + 1]
-                i += 2
-                continue
             prompt_parts.append(token)
             i += 1
 
         prompt = " ".join(prompt_parts).strip()
         if not prompt:
             raise ValueError("请提供提示词。")
-        return prompt, ref_urls, model_override
+        return prompt, ref_urls
 
     def _get_timeout(self) -> httpx.Timeout:
         try:
