@@ -98,8 +98,12 @@ class Response2Image(Star):
             return
         yield event.plain_result("用法：自拍参考 设置/查看/删除")
 
-    @filter.llm_tool(name="r2i_aiimg")
-    async def llm_r2i_aiimg(self, event: AstrMessageEvent, prompt: str) -> None:
+    @filter.llm_tool()
+    async def llm_r2i_aiimg(
+        self,
+        event: AstrMessageEvent,
+        prompt: str = "",
+    ) -> None:
         """
         文生图
         aiimg <提示词> [--model 模型]
@@ -110,8 +114,12 @@ class Response2Image(Star):
         async for result in self._generate(event, prompt, mode="text"):
             yield result
 
-    @filter.llm_tool(name="r2i_aiedit")
-    async def llm_r2i_aiedit(self, event: AstrMessageEvent, prompt: str) -> None:
+    @filter.llm_tool()
+    async def llm_r2i_aiedit(
+        self,
+        event: AstrMessageEvent,
+        prompt: str
+    ) -> None:
         """
         改图
         aiedit <提示词> [--ref 图片URL] [--model 模型]
@@ -123,7 +131,11 @@ class Response2Image(Star):
             yield result
 
     @filter.llm_tool(name="r2i_selfie")
-    async def llm_r2i_selfie(self, event: AstrMessageEvent, prompt: str) -> None:
+    async def llm_r2i_selfie(
+        self,
+        event: AstrMessageEvent,
+        prompt: str
+    ) -> None:
         """
         自拍
         selfie <提示词> [--ref 图片URL] [--model 模型]
