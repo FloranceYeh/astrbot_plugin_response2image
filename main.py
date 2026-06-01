@@ -23,10 +23,10 @@ class Response2Image(Star):
         self.data_dir: Path = StarTools.get_data_dir()
 
     @filter.command_group("r2i")
-    def r2i():
+    def r2i(self):
         pass
 
-    @r2i.command("help", alias={"帮助", "h", "?"})
+    @r2i.command("help")
     async def r2i_help(self, event: AstrMessageEvent):
         yield event.plain_result(
             "r2i 图像生成系统\n"
@@ -39,31 +39,31 @@ class Response2Image(Star):
             "• /r2i selfie_ref clear     清空所有参考图\n"
         )
 
-    @r2i.command("img", alias={"画图", "绘图"})
+    @r2i.command("img")
     async def img(self, event: AstrMessageEvent, prompt: str):
         """自动判断文生图或改图。"""
         async for result in self._generate(event, prompt, mode="auto"):
             yield result
 
-    @r2i.command("aiimg", alias={"文生图", "生图"})
+    @r2i.command("aiimg")
     async def aiimg(self, event: AstrMessageEvent, prompt: str):
         """文生图模式。"""
         async for result in self._generate(event, prompt, mode="text"):
             yield result
 
-    @r2i.command("aiedit", alias={"改图", "图生图"})
+    @r2i.command("aiedit")
     async def aiedit(self, event: AstrMessageEvent, prompt: str):
         """改图模式。"""
         async for result in self._generate(event, prompt, mode="edit"):
             yield result
 
-    @r2i.command("selfie", alias={"自拍"})
+    @r2i.command("selfie")
     async def selfie(self, event: AstrMessageEvent, prompt: str):
         """自拍模式。"""
         async for result in self._generate(event, prompt, mode="selfie"):
             yield result
 
-    @r2i.command("selfie_ref", alias={"自拍参考"})
+    @r2i.command("selfie_ref")
     async def selfie_ref(self, event: AstrMessageEvent, action: str = ""):
         """自拍参考照管理：设置/查看/删除。"""
         action = (action or "").strip()
@@ -98,50 +98,86 @@ class Response2Image(Star):
             return
         yield event.plain_result("用法：自拍参考 设置/查看/删除")
 
-    @filter.llm_tool()
+    @filter.llm_tool(name="r2i_img")
+    async def llm_r2i_img(
+        self,
+        event: AstrMessageEvent,
+        prompt: str = "",
+    ) -> str:
+        """
+        自动判断文生图或改图。
+
+        Args:
+            prompt(string): 图片生成提示词，支持使用 --ref 和 --model 参数。
+        """
+        return await self._run_llm_tool(event, prompt, mode="auto")
+
+    @filter.llm_tool(name="r2i_aiimg")
     async def llm_r2i_aiimg(
         self,
         event: AstrMessageEvent,
         prompt: str = "",
-    ) -> None:
+    ) -> str:
         """
-        文生图
+        文生图。
 
         Args:
-            prompt: 生成图片的提示词，支持使用 --model 指定模型。
+            prompt(string): 图片生成提示词，支持使用 --model 参数。
         """
-        async for result in self._generate(event, prompt, mode="text"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="text")
 
-    @filter.llm_tool()
+    @filter.llm_tool(name="r2i_aiedit")
     async def llm_r2i_aiedit(
         self,
         event: AstrMessageEvent,
         prompt: str = "",
-    ) -> None:
+    ) -> str:
         """
-        改图
+        改图。
 
         Args:
-            prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
+            prompt(string): 图片编辑提示词，支持使用 --ref 和 --model 参数。
         """
-        async for result in self._generate(event, prompt, mode="edit"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="edit")
 
-    @filter.llm_tool()
+    @filter.llm_tool(name="r2i_selfie")
     async def llm_r2i_selfie(
         self,
         event: AstrMessageEvent,
         prompt: str = "",
-    ) -> None:
+    ) -> str:
         """
-        自拍
+        自拍。
 
         Args:
-            prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
+            prompt(string): 自拍图提示词，支持使用 --ref 和 --model 参数。
         """
-        async for result in self._generate(event, prompt, mode="selfie"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="selfie")
+
+    @filter.llm_tool(name="r2i_selfie_ref")
+    async def llm_r2i_selfie_ref(
+        self,
+        event: AstrMessageEvent,
+        action: str = "list",
+    ) -> str:
+        """
+        管理自拍参考照。
+
+        Args:
+            action(string): 操作，可选 set、list、clear。
+        """
+        sent = 0
+        async for result in self.selfie_ref(event, action):
+            await event.send(result)
+            sent += 1
+        return f"已发送 {sent} 条自拍参考照结果。"
+
+    async def _run_llm_tool(self, event: AstrMessageEvent, prompt: str, *, mode: str) -> str:
+        sent = 0
+        async for result in self._generate(event, prompt, mode=mode):
+            await event.send(result)
+            sent += 1
+        return f"已发送 {sent} 条 r2i 结果。"
 
 
     async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
