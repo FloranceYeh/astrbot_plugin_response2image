@@ -42,8 +42,8 @@ class Response2Image(Star):
             "• /r2i aiedit <提示词> [--ref 图片URL]      图生图\n"
             "• /r2i selfie <提示词> [--ref 图片URL]      自拍\n"
             "• /r2i selfie_ref set       发送或引用图片后执行\n"
-            "• /r2i selfie_ref list      查看已保存的参考图\n"
-            "• /r2i selfie_ref clear     清空所有参考图\n"
+            "• /r2i selfie_ref list      查看当前参考图\n"
+            "• /r2i selfie_ref clear     清空命令保存的参考图\n"
         )
 
     @r2i.command("img")
@@ -93,15 +93,25 @@ class Response2Image(Star):
             yield event.plain_result(f"已保存自拍参考照 {count} 张。")
             return
         if action in {"查看", "list"}:
-            refs = self._list_selfie_ref_paths()
+            config_refs = self._get_selfie_refs_from_config()
+            saved_refs = self._list_selfie_ref_paths()
+            refs = self._merge_refs(config_refs, saved_refs)
             if not refs:
                 yield event.plain_result("暂无自拍参考照。")
                 return
-            yield event.plain_result(f"当前已保存 {len(refs)} 张自拍参考照。")
+            yield event.plain_result(
+                f"当前共有 {len(refs)} 张自拍参考照（WebUI 配置 {len(config_refs)} 张，命令保存 {len(saved_refs)} 张）。"
+            )
             return
         if action in {"删除", "清空", "clear"}:
             count = self._clear_selfie_refs()
-            yield event.plain_result(f"已删除自拍参考照 {count} 张。")
+            config_count = len(self._get_selfie_refs_from_config())
+            if config_count:
+                yield event.plain_result(
+                    f"已删除命令保存的自拍参考照 {count} 张。WebUI 配置中仍有 {config_count} 张参考图。"
+                )
+                return
+            yield event.plain_result(f"已删除命令保存的自拍参考照 {count} 张。")
             return
         yield event.plain_result("用法：自拍参考 设置/查看/删除")
 
@@ -207,9 +217,8 @@ class Response2Image(Star):
             return GenerationResult(event.plain_result(text), text)
 
         event_refs = self._extract_refs_from_event(event) if mode in {"auto", "edit", "selfie"} else []
-        config_refs = self._get_selfie_refs_from_config() if mode == "selfie" else []
         if mode == "selfie" and not ref_urls and not event_refs:
-            ref_urls = config_refs or self._list_selfie_ref_paths()
+            ref_urls = self._get_all_selfie_refs()
 
         if mode == "text" and (ref_urls or event_refs):
             text = "文生图模式不使用参考图，请改用改图或自拍。"
@@ -558,6 +567,12 @@ class Response2Image(Star):
             if resolved:
                 refs.append(resolved)
         return self._merge_refs(refs, [])
+
+    def _get_all_selfie_refs(self) -> list[str]:
+        return self._merge_refs(
+            self._get_selfie_refs_from_config(),
+            self._list_selfie_ref_paths(),
+        )
 
     def _extract_config_image_refs(self, raw: Any) -> list[str]:
         if not raw:

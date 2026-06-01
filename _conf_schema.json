@@ -25,7 +25,7 @@
   "selfie_reference_images": {
     "description": "自拍参考图",
     "type": "file",
-    "hint": "在 WebUI 直接上传参考图；留空则使用“自拍参考 设置”保存的图片",
+    "hint": "在 WebUI 直接上传参考图；会与“自拍参考 设置”保存的图片合并使用",
     "default": ""
   }
 }

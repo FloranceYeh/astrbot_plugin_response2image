@@ -22,7 +22,7 @@
 - `api_key`: 接口密钥
 - `model`: 模型 ID（需支持 `image_generation` 工具）
 - `timeout_seconds`: 请求超时（秒）
-- `selfie_reference_images`: 自拍参考图（可在 WebUI 上传）
+- `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）
 
 ## 使用
 
@@ -60,5 +60,5 @@ r2i selfie 日常自拍照，微笑，窗边自然光
 
 - `--ref` 支持多个图片，用英文逗号分隔。
 - 若消息或引用中包含图片，会自动作为参考图参与图生图请求。
-- 自拍模式优先使用命令或消息中的参考图，否则使用配置上传或“自拍参考 设置”保存的参考照。
+- 自拍模式优先使用命令或消息中的参考图，否则合并使用 WebUI 配置上传和 `selfie_ref set` 保存的参考照。
 - 若未收到图片，通常是模型未调用 `image_generation` 工具或模型不支持该能力。
