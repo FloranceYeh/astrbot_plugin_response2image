@@ -1,15 +1,18 @@
 import base64
 import binascii
 import json
+import re
 import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
+import astrbot.api.message_components as Comp
 from astrbot.api.star import Context, Star, StarTools
 
 
@@ -46,13 +49,10 @@ class Response2Image(Star):
 
         try:
             normalized_base = self._normalize_base_url(base_url)
-            ref_images = self._normalize_ref_images(ref_urls)
         except ValueError as exc:
             yield event.plain_result(str(exc))
             return
 
-        payload = self._build_payload(prompt, model, ref_images)
-        url = normalized_base + "/v1/responses"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Accept": "text/event-stream",
@@ -68,8 +68,20 @@ class Response2Image(Star):
             return
         timeout = httpx.Timeout(timeout_seconds)
 
+        event_refs = self._extract_refs_from_event(event)
+        merged_refs = self._merge_refs(ref_urls, event_refs)
+        url = normalized_base + "/v1/responses"
+        image_error: str | None = None
+
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
+                try:
+                    ref_images = await self._normalize_ref_images(merged_refs, client)
+                except ValueError as exc:
+                    yield event.plain_result(str(exc))
+                    return
+
+                payload = self._build_payload(prompt, model, ref_images)
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     if response.status_code >= 400:
                         body = await response.aread()
@@ -94,19 +106,28 @@ class Response2Image(Star):
                             logger.warning("无法解析数据块: %s", data_str[:200])
                             continue
 
-                        b64 = self._extract_base64(data)
-                        if not b64:
+                        image_ref = self._extract_image_ref(data)
+                        if not image_ref:
                             continue
                         try:
-                            image_bytes = base64.b64decode(b64)
-                        except binascii.Error as exc:
-                            logger.warning("无效的 base64 图像: %s", exc)
+                            image_bytes = await self._read_image_bytes(image_ref, client)
+                        except ValueError as exc:
+                            image_error = str(exc)
+                            logger.warning("图片解析失败: %s", exc)
                             continue
 
                         file_path = self._write_image(image_bytes)
-                        yield event.image_result(str(file_path))
+                        size_str = self._format_size(len(image_bytes))
+                        chain = [
+                            Comp.Plain(f"已生成图片（{size_str}）"),
+                            Comp.Image.fromFileSystem(str(file_path)),
+                        ]
+                        yield event.chain_result(chain)
                         return
 
+            if image_error:
+                yield event.plain_result(image_error)
+                return
             yield event.plain_result("未收到图片结果，请检查模型是否支持 image_generation。")
         except httpx.HTTPError as exc:
             logger.error(f"请求失败: {exc}")
@@ -164,28 +185,25 @@ class Response2Image(Star):
             raise ValueError("请提供提示词。")
         return prompt, ref_urls, model_override
 
-    def _normalize_ref_images(self, refs: list[str]) -> list[str]:
+    async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
         for ref in refs:
             ref = ref.strip()
             if not ref:
                 continue
-            if ref.startswith(("http://", "https://", "data:image/")):
+            if self._looks_like_data_url(ref):
                 normalized.append(ref)
+                continue
+            if ref.startswith(("http://", "https://")):
+                data_url = await self._fetch_image_as_data_url(ref, client)
+                normalized.append(data_url)
                 continue
             path = Path(ref)
             if not path.is_file():
                 raise ValueError(f"参考图片不存在: {ref}")
-            suffix = path.suffix.lower()
-            if suffix in {".jpg", ".jpeg"}:
-                mime = "image/jpeg"
-            elif suffix == ".webp":
-                mime = "image/webp"
-            else:
-                mime = "image/png"
+            mime = self._guess_mime_from_path(path)
             data = path.read_bytes()
-            b64 = base64.b64encode(data).decode("ascii")
-            normalized.append(f"data:{mime};base64,{b64}")
+            normalized.append(self._build_data_url(mime, data))
         return normalized
 
     def _build_payload(self, prompt: str, model: str, ref_images: list[str]) -> dict:
@@ -219,26 +237,195 @@ class Response2Image(Star):
             "stream": True,
         }
 
-    def _extract_base64(self, data: Any) -> str | None:
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key in {"result", "b64_json", "image"} and isinstance(value, str):
-                    if self._looks_like_base64(value):
-                        return value
-                found = self._extract_base64(value)
-                if found:
-                    return found
-        elif isinstance(data, list):
-            for item in data:
-                found = self._extract_base64(item)
-                if found:
-                    return found
+    def _extract_image_ref(self, data: Any) -> tuple[str, str] | None:
+        fallback_url: str | None = None
+
+        def walk(obj: Any) -> tuple[str, str] | None:
+            nonlocal fallback_url
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    if isinstance(value, str):
+                        if key in {"result", "b64_json", "image"} and self._looks_like_base64(value):
+                            return ("base64", value)
+                        if self._looks_like_data_url(value):
+                            return ("data_url", value)
+                        if key in {"url", "image_url", "output_url"} and value.startswith(("http://", "https://")):
+                            return ("url", value)
+                        if fallback_url is None and self._looks_like_image_url(value):
+                            fallback_url = value
+                    found = walk(value)
+                    if found:
+                        return found
+            elif isinstance(obj, list):
+                for item in obj:
+                    found = walk(item)
+                    if found:
+                        return found
+            return None
+
+        direct = walk(data)
+        if direct:
+            return direct
+        if fallback_url:
+            return ("url", fallback_url)
         return None
 
     def _looks_like_base64(self, value: str) -> bool:
         if value.startswith(("iVBOR", "/9j/")):
             return True
         return len(value) > 1000
+
+    def _looks_like_data_url(self, value: str) -> bool:
+        return value.startswith("data:image/")
+
+    def _looks_like_image_url(self, value: str) -> bool:
+        if not value.startswith(("http://", "https://")):
+            return False
+        return self._has_image_extension(value)
+
+    def _has_image_extension(self, value: str) -> bool:
+        trimmed = value.split("?", 1)[0].split("#", 1)[0]
+        suffix = Path(trimmed).suffix.lower()
+        return suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+    def _guess_mime_from_path(self, path: Path) -> str:
+        suffix = path.suffix.lower()
+        if suffix in {".jpg", ".jpeg"}:
+            return "image/jpeg"
+        if suffix == ".webp":
+            return "image/webp"
+        if suffix == ".gif":
+            return "image/gif"
+        return "image/png"
+
+    def _guess_mime_from_url(self, url: str) -> str | None:
+        path = urlparse(url).path
+        suffix = Path(path).suffix.lower()
+        if suffix in {".jpg", ".jpeg"}:
+            return "image/jpeg"
+        if suffix == ".webp":
+            return "image/webp"
+        if suffix == ".gif":
+            return "image/gif"
+        if suffix == ".png":
+            return "image/png"
+        return None
+
+    def _build_data_url(self, mime: str, data: bytes) -> str:
+        b64 = base64.b64encode(data).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+
+    async def _fetch_image_as_data_url(self, url: str, client: httpx.AsyncClient) -> str:
+        resp = await client.get(url, follow_redirects=True)
+        if resp.status_code >= 400:
+            raise ValueError(f"参考图片请求失败：HTTP {resp.status_code}")
+        content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].strip()
+        if not content_type.startswith("image/"):
+            guessed = self._guess_mime_from_url(url)
+            if not guessed:
+                raise ValueError("参考图片 Content-Type 不是图片。")
+            content_type = guessed
+        return self._build_data_url(content_type, resp.content)
+
+    def _decode_data_url(self, data_url: str) -> bytes:
+        if "," not in data_url:
+            raise ValueError("返回的 data URL 无效。")
+        header, b64 = data_url.split(",", 1)
+        if ";base64" not in header:
+            raise ValueError("返回的 data URL 缺少 base64 编码。")
+        try:
+            return base64.b64decode(b64)
+        except binascii.Error as exc:
+            raise ValueError("返回的 data URL 无法解码。") from exc
+
+    async def _read_image_bytes(
+        self, image_ref: tuple[str, str], client: httpx.AsyncClient
+    ) -> bytes:
+        kind, value = image_ref
+        if kind == "base64":
+            try:
+                return base64.b64decode(value)
+            except binascii.Error as exc:
+                raise ValueError("返回的图片 base64 无法解码。") from exc
+        if kind == "data_url":
+            return self._decode_data_url(value)
+        if kind == "url":
+            resp = await client.get(value, follow_redirects=True)
+            if resp.status_code >= 400:
+                raise ValueError(f"返回的图片 URL 请求失败：HTTP {resp.status_code}")
+            return resp.content
+        raise ValueError("未识别的图片格式。")
+
+    def _format_size(self, size_bytes: int) -> str:
+        if size_bytes >= 1024 * 1024:
+            return f"{size_bytes / 1024 / 1024:.1f} MB"
+        return f"{size_bytes / 1024:.1f} KB"
+
+    def _merge_refs(self, first: list[str], second: list[str]) -> list[str]:
+        seen: set[str] = set()
+        merged: list[str] = []
+        for item in first + second:
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+        return merged
+
+    def _extract_refs_from_event(self, event: AstrMessageEvent) -> list[str]:
+        refs: list[str] = []
+        self._collect_image_refs(event.message_obj, refs)
+        refs.extend(self._extract_image_refs_from_text(event.message_str))
+        return refs
+
+    def _collect_image_refs(self, obj: Any, refs: list[str]) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, (list, tuple, set)):
+            for item in obj:
+                self._collect_image_refs(item, refs)
+            return
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if isinstance(value, str):
+                    if self._looks_like_image_ref(value):
+                        refs.append(value)
+                    elif key in {"url", "image_url"} and value.startswith(("http://", "https://")):
+                        refs.append(value)
+                    else:
+                        self._collect_image_refs(value, refs)
+                else:
+                    self._collect_image_refs(value, refs)
+            return
+
+        for attr in ("url", "image_url", "file", "path", "data", "data_url"):
+            value = getattr(obj, attr, None)
+            if isinstance(value, str):
+                if self._looks_like_image_ref(value):
+                    refs.append(value)
+                elif attr in {"url", "image_url"} and value.startswith(("http://", "https://")):
+                    refs.append(value)
+
+        for attr in ("message_chain", "chain", "components", "content", "message", "reply", "quote", "source"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                self._collect_image_refs(child, refs)
+
+    def _extract_image_refs_from_text(self, text: str | None) -> list[str]:
+        if not text:
+            return []
+        matches = re.findall(r"(https?://\S+)", text)
+        return [m for m in matches if self._looks_like_image_ref(m)]
+
+    def _looks_like_image_ref(self, value: str) -> bool:
+        if self._looks_like_data_url(value):
+            return True
+        if value.startswith(("http://", "https://")):
+            return self._has_image_extension(value)
+        path = Path(value)
+        if not path.is_file():
+            return False
+        suffix = path.suffix.lower()
+        return suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
     def _write_image(self, image_bytes: bytes) -> Path:
         out_dir = self.data_dir / "generated"
