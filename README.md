@@ -1,10 +1,11 @@
 # Response2Image
 
-基于 Responses API 的 AstrBot 图像生成插件，支持文生图与参考图编辑，自动保存生成图片并返回。
+基于 Responses API 的 AstrBot 图像生成插件，支持文生图、改图、自拍三种模式，自动保存生成图片并返回。
 
 ## 功能
 
 - 通过 `/v1/responses` 流式获取图片结果
+- 文生图 / 改图 / 自拍三种模式
 - 支持 `--ref` 参考图（URL / data:image / 本地文件路径）
 - 自动从消息/引用里提取图片作为参考图
 - 支持 `--model` 覆盖配置模型
@@ -25,21 +26,30 @@
 
 ## 使用
 
-命令：`img <提示词> [--ref 图片URL] [--model 模型]`
+命令：
 
-别名：`画图` `绘图` `r2i` `resp2img`
+- `img <提示词> [--ref 图片URL] [--model 模型]` 自动模式（有图则改图，无图则文生图）
+- `aiimg <提示词> [--model 模型]` 文生图模式
+- `aiedit <提示词> [--ref 图片URL] [--model 模型]` 改图模式
+- `selfie <提示词> [--ref 图片URL] [--model 模型]` 自拍模式
+- `自拍参考 设置/查看/删除` 自拍参考照管理
+
+别名：`画图` `绘图` `r2i` `resp2img`、`文生图`、`生图`、`改图`、`图生图`、`自拍`
 
 示例：
 
 ```
 img 一只在雨中奔跑的柴犬，皮克斯动画风格
-img 夜色霓虹城市 --model gpt-4o-mini
-img 把参考图改成水彩风格 --ref https://example.com/input.png
-img 把参考图加上蓝色天空 --ref C:\Images\input.jpg
+aiimg 夜色霓虹城市 --model gpt-4o-mini
+aiedit 把参考图改成水彩风格 --ref https://example.com/input.png
+aiedit 把参考图加上蓝色天空 --ref C:\Images\input.jpg
+自拍参考 设置
+selfie 日常自拍照，微笑，窗边自然光
 ```
 
 ## 说明
 
 - `--ref` 支持多个图片，用英文逗号分隔。
 - 若消息或引用中包含图片，会自动作为参考图参与图生图请求。
+- 自拍模式优先使用命令或消息中的参考图，否则使用“自拍参考 设置”保存的参考照。
 - 若未收到图片，通常是模型未调用 `image_generation` 工具或模型不支持该能力。

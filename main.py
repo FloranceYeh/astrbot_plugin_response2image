@@ -24,9 +24,67 @@ class Response2Image(Star):
 
     @filter.command("img", alias={"画图", "绘图", "r2i", "resp2img"})
     async def img(self, event: AstrMessageEvent, prompt: str):
-        """根据提示词生成图片。用法：img <提示词> [--ref 图片URL] [--model 模型]"""
+        """自动判断文生图或改图。"""
+        async for result in self._generate(event, prompt, mode="auto"):
+            yield result
+
+    @filter.command("aiimg", alias={"文生图", "生图"})
+    async def aiimg(self, event: AstrMessageEvent, prompt: str):
+        """文生图模式。"""
+        async for result in self._generate(event, prompt, mode="text"):
+            yield result
+
+    @filter.command("aiedit", alias={"改图", "图生图"})
+    async def aiedit(self, event: AstrMessageEvent, prompt: str):
+        """改图模式。"""
+        async for result in self._generate(event, prompt, mode="edit"):
+            yield result
+
+    @filter.command("selfie", alias={"自拍"})
+    async def selfie(self, event: AstrMessageEvent, prompt: str):
+        """自拍模式。"""
+        async for result in self._generate(event, prompt, mode="selfie"):
+            yield result
+
+    @filter.command("selfie_ref", alias={"自拍参考"})
+    async def selfie_ref(self, event: AstrMessageEvent, action: str = ""):
+        """自拍参考照管理：设置/查看/删除。"""
+        action = (action or "").strip()
+        if action in {"设置", "set"}:
+            refs = self._extract_refs_from_event(event)
+            if not refs:
+                yield event.plain_result("请发送或引用图片后再设置自拍参考照。")
+                return
+            try:
+                timeout = self._get_timeout()
+            except ValueError as exc:
+                yield event.plain_result(str(exc))
+                return
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                try:
+                    count = await self._save_selfie_refs(refs, client)
+                except ValueError as exc:
+                    yield event.plain_result(str(exc))
+                    return
+            yield event.plain_result(f"已保存自拍参考照 {count} 张。")
+            return
+        if action in {"查看", "list"}:
+            refs = self._list_selfie_ref_paths()
+            if not refs:
+                yield event.plain_result("暂无自拍参考照。")
+                return
+            yield event.plain_result(f"当前已保存 {len(refs)} 张自拍参考照。")
+            return
+        if action in {"删除", "清空", "clear"}:
+            count = self._clear_selfie_refs()
+            yield event.plain_result(f"已删除自拍参考照 {count} 张。")
+            return
+
+        yield event.plain_result("用法：自拍参考 设置/查看/删除")
+
+    async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
         try:
-            prompt, ref_urls, model_override = self._parse_prompt(prompt)
+            prompt, ref_urls, model_override = self._parse_prompt(raw_prompt)
         except ValueError as exc:
             yield event.plain_result(str(exc))
             return
@@ -53,24 +111,34 @@ class Response2Image(Star):
             yield event.plain_result(str(exc))
             return
 
+        try:
+            timeout = self._get_timeout()
+        except ValueError as exc:
+            yield event.plain_result(str(exc))
+            return
+
+        event_refs = self._extract_refs_from_event(event) if mode in {"auto", "edit", "selfie"} else []
+        if mode == "selfie" and not ref_urls and not event_refs:
+            ref_urls = self._list_selfie_ref_paths()
+
+        if mode == "text" and (ref_urls or event_refs):
+            yield event.plain_result("文生图模式不使用参考图，请改用改图或自拍。")
+            return
+        if mode == "edit" and not (ref_urls or event_refs):
+            yield event.plain_result("改图需要参考图片，请发送/引用图片或使用 --ref。")
+            return
+        if mode == "selfie" and not (ref_urls or event_refs):
+            yield event.plain_result("未设置自拍参考照，请先使用“自拍参考 设置”。")
+            return
+
+        merged_refs = self._merge_refs(ref_urls, event_refs)
+        resolved_mode = self._resolve_mode(mode, merged_refs)
+        url = normalized_base + "/v1/responses"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Accept": "text/event-stream",
             "Content-Type": "application/json",
         }
-        try:
-            timeout_seconds = int(self._config_get("timeout_seconds", 120))
-        except (TypeError, ValueError):
-            yield event.plain_result("插件配置 timeout_seconds 无效。")
-            return
-        if timeout_seconds <= 0:
-            yield event.plain_result("插件配置 timeout_seconds 必须大于 0。")
-            return
-        timeout = httpx.Timeout(timeout_seconds)
-
-        event_refs = self._extract_refs_from_event(event)
-        merged_refs = self._merge_refs(ref_urls, event_refs)
-        url = normalized_base + "/v1/responses"
         image_error: str | None = None
 
         try:
@@ -80,8 +148,11 @@ class Response2Image(Star):
                 except ValueError as exc:
                     yield event.plain_result(str(exc))
                     return
+                if resolved_mode in {"edit", "selfie"} and not ref_images:
+                    yield event.plain_result("参考图片不可用，请检查图片是否可访问。")
+                    return
 
-                payload = self._build_payload(prompt, model, ref_images)
+                payload = self._build_payload(prompt, model, ref_images, resolved_mode)
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     if response.status_code >= 400:
                         body = await response.aread()
@@ -118,8 +189,9 @@ class Response2Image(Star):
 
                         file_path = self._write_image(image_bytes)
                         size_str = self._format_size(len(image_bytes))
+                        label = self._mode_label(resolved_mode)
                         chain = [
-                            Comp.Plain(f"已生成图片（{size_str}）"),
+                            Comp.Plain(f"{label}完成（{size_str}）"),
                             Comp.Image.fromFileSystem(str(file_path)),
                         ]
                         yield event.chain_result(chain)
@@ -185,6 +257,38 @@ class Response2Image(Star):
             raise ValueError("请提供提示词。")
         return prompt, ref_urls, model_override
 
+    def _get_timeout(self) -> httpx.Timeout:
+        try:
+            timeout_seconds = int(self._config_get("timeout_seconds", 120))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("插件配置 timeout_seconds 无效。") from exc
+        if timeout_seconds <= 0:
+            raise ValueError("插件配置 timeout_seconds 必须大于 0。")
+        return httpx.Timeout(timeout_seconds)
+
+    def _resolve_mode(self, mode: str, refs: list[str]) -> str:
+        if mode == "auto":
+            return "edit" if refs else "text"
+        return mode
+
+    def _mode_label(self, mode: str) -> str:
+        if mode == "edit":
+            return "改图"
+        if mode == "selfie":
+            return "自拍"
+        return "文生图"
+
+    def _build_edit_prompt(self, prompt: str, mode: str) -> str:
+        if mode == "selfie":
+            return (
+                "请根据提供的人像参考生成自拍风格图片，保持人物一致。要求："
+                + prompt
+            )
+        return (
+            "请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求："
+            + prompt
+        )
+
     async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
         for ref in refs:
@@ -206,12 +310,9 @@ class Response2Image(Star):
             normalized.append(self._build_data_url(mime, data))
         return normalized
 
-    def _build_payload(self, prompt: str, model: str, ref_images: list[str]) -> dict:
-        if ref_images:
-            edit_prompt = (
-                "请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求："
-                + prompt
-            )
+    def _build_payload(self, prompt: str, model: str, ref_images: list[str], mode: str) -> dict:
+        if mode in {"edit", "selfie"}:
+            edit_prompt = self._build_edit_prompt(prompt, mode)
             content = [{"type": "input_image", "image_url": url} for url in ref_images]
             content.append({"type": "input_text", "text": edit_prompt})
             return {
@@ -315,6 +416,21 @@ class Response2Image(Star):
         b64 = base64.b64encode(data).decode("ascii")
         return f"data:{mime};base64,{b64}"
 
+    def _parse_data_url(self, data_url: str) -> tuple[str, bytes]:
+        if "," not in data_url:
+            raise ValueError("返回的 data URL 无效。")
+        header, b64 = data_url.split(",", 1)
+        if not header.startswith("data:") or ";base64" not in header:
+            raise ValueError("返回的 data URL 格式不正确。")
+        mime = header[5:].split(";", 1)[0]
+        if not mime:
+            raise ValueError("返回的 data URL 缺少 MIME。")
+        try:
+            data = base64.b64decode(b64)
+        except binascii.Error as exc:
+            raise ValueError("返回的 data URL 无法解码。") from exc
+        return mime, data
+
     async def _fetch_image_as_data_url(self, url: str, client: httpx.AsyncClient) -> str:
         resp = await client.get(url, follow_redirects=True)
         if resp.status_code >= 400:
@@ -328,15 +444,56 @@ class Response2Image(Star):
         return self._build_data_url(content_type, resp.content)
 
     def _decode_data_url(self, data_url: str) -> bytes:
-        if "," not in data_url:
-            raise ValueError("返回的 data URL 无效。")
-        header, b64 = data_url.split(",", 1)
-        if ";base64" not in header:
-            raise ValueError("返回的 data URL 缺少 base64 编码。")
-        try:
-            return base64.b64decode(b64)
-        except binascii.Error as exc:
-            raise ValueError("返回的 data URL 无法解码。") from exc
+        _, data = self._parse_data_url(data_url)
+        return data
+
+    def _mime_to_ext(self, mime: str) -> str:
+        if mime == "image/jpeg":
+            return ".jpg"
+        if mime == "image/webp":
+            return ".webp"
+        if mime == "image/gif":
+            return ".gif"
+        return ".png"
+
+    def _selfie_ref_dir(self) -> Path:
+        return self.data_dir / "selfie_refs"
+
+    def _list_selfie_ref_paths(self) -> list[str]:
+        ref_dir = self._selfie_ref_dir()
+        if not ref_dir.exists():
+            return []
+        paths = []
+        for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif"):
+            paths.extend(ref_dir.glob(ext))
+        return [str(p) for p in sorted(paths)]
+
+    def _clear_selfie_refs(self) -> int:
+        ref_dir = self._selfie_ref_dir()
+        if not ref_dir.exists():
+            return 0
+        count = 0
+        for path in ref_dir.iterdir():
+            if path.is_file():
+                path.unlink()
+                count += 1
+        return count
+
+    async def _save_selfie_refs(self, refs: list[str], client: httpx.AsyncClient) -> int:
+        ref_images = await self._normalize_ref_images(refs, client)
+        if not ref_images:
+            raise ValueError("未找到可用的参考图片。")
+        ref_dir = self._selfie_ref_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        count = 0
+        for idx, data_url in enumerate(ref_images):
+            mime, data = self._parse_data_url(data_url)
+            ext = self._mime_to_ext(mime)
+            name = datetime.now().strftime("selfie_%Y%m%d_%H%M%S")
+            path = ref_dir / f"{name}_{idx}{ext}"
+            path.write_bytes(data)
+            count += 1
+        return count
 
     async def _read_image_bytes(
         self, image_ref: tuple[str, str], client: httpx.AsyncClient
