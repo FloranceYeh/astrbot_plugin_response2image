@@ -462,23 +462,54 @@ class Response2Image(Star):
 
     def _get_selfie_refs_from_config(self) -> list[str]:
         raw = self._config_get("selfie_reference_images", [])
-        if not raw:
-            return []
-        if isinstance(raw, str):
-            candidates = [raw]
-        elif isinstance(raw, (list, tuple, set)):
-            candidates = [str(item) for item in raw if item]
-        else:
-            candidates = []
-        paths: list[str] = []
-        for item in candidates:
-            value = str(item).strip()
+        refs: list[str] = []
+        for item in self._extract_config_image_refs(raw):
+            value = item.strip()
             if not value:
+                continue
+            if self._looks_like_data_url(value) or value.startswith(("http://", "https://")):
+                refs.append(value)
                 continue
             path = Path(value)
             if path.is_file():
-                paths.append(str(path))
-        return paths
+                refs.append(str(path))
+        return self._merge_refs(refs, [])
+
+    def _extract_config_image_refs(self, raw: Any) -> list[str]:
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            return [raw]
+        if isinstance(raw, Path):
+            return [str(raw)]
+        if isinstance(raw, dict):
+            refs: list[str] = []
+            for key in (
+                "path",
+                "file",
+                "filepath",
+                "value",
+                "url",
+                "image_url",
+                "data",
+                "data_url",
+                "local_path",
+                "temp_path",
+            ):
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    refs.append(value)
+            if refs:
+                return refs
+            for value in raw.values():
+                refs.extend(self._extract_config_image_refs(value))
+            return refs
+        if isinstance(raw, (list, tuple, set)):
+            refs: list[str] = []
+            for item in raw:
+                refs.extend(self._extract_config_image_refs(item))
+            return refs
+        return []
 
     def _list_selfie_ref_paths(self) -> list[str]:
         ref_dir = self._selfie_ref_dir()
