@@ -24,11 +24,8 @@
   },
   "selfie_reference_images": {
     "description": "自拍参考图",
-    "type": "list",
-    "items": {
-      "type": "file",
-      "description": "参考图"
-    },
-    "default": []
+    "type": "file",
+    "hint": "在 WebUI 直接上传参考图；留空则使用“自拍参考 设置”保存的图片",
+    "default": ""
   }
 }
