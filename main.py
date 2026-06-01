@@ -22,25 +22,12 @@ class Response2Image(Star):
         self.config = config
         self.data_dir: Path = StarTools.get_data_dir()
 
-    r2i = CommandGroup(
-        "r2i",
-        alias={"r2i", "resp2img", "response2image"},
-        help="基于 Responses API 的 Astrbot 图像生成插件。"
-    )
+    @filter.command_group("r2i")
+    def r2i():
+        pass
 
-    @r2i.default()
+    @r2i.command("help", alias={"帮助", "h", "?"})
     async def r2i_help(self, event: AstrMessageEvent):
-        yield event.plain_result(
-            "可用子命令：\n"
-            "/r2i img 自动\n"
-            "/r2i aiimg 文生图\n"
-            "/r2i aiedit 改图\n"
-            "/r2i selfie 自拍\n"
-            "/r2i selfie_ref 设置/查看/删除"
-        )
-
-    @r2i.command("help")
-    async def r2i_help_detail(self, event: AstrMessageEvent):
         yield event.plain_result(
             "r2i 图像生成系统\n"
             "• /r2i img <提示词> [--ref 图片URL] [--model 模型]      自动判断文生图/改图\n"
@@ -52,31 +39,31 @@ class Response2Image(Star):
             "• /r2i selfie_ref clear     清空所有参考图\n"
         )
 
-    r2i.command("img", alias={"画图", "绘图"})
+    @r2i.command("img", alias={"画图", "绘图"})
     async def img(self, event: AstrMessageEvent, prompt: str):
         """自动判断文生图或改图。"""
         async for result in self._generate(event, prompt, mode="auto"):
             yield result
 
-    r2i.command("aiimg", alias={"文生图", "生图"})
+    @r2i.command("aiimg", alias={"文生图", "生图"})
     async def aiimg(self, event: AstrMessageEvent, prompt: str):
         """文生图模式。"""
         async for result in self._generate(event, prompt, mode="text"):
             yield result
 
-    r2i.command("aiedit", alias={"改图", "图生图"})
+    @r2i.command("aiedit", alias={"改图", "图生图"})
     async def aiedit(self, event: AstrMessageEvent, prompt: str):
         """改图模式。"""
         async for result in self._generate(event, prompt, mode="edit"):
             yield result
 
-    r2i.command("selfie", alias={"自拍"})
+    @r2i.command("selfie", alias={"自拍"})
     async def selfie(self, event: AstrMessageEvent, prompt: str):
         """自拍模式。"""
         async for result in self._generate(event, prompt, mode="selfie"):
             yield result
 
-    r2i.command("selfie_ref", alias={"自拍参考"})
+    @r2i.command("selfie_ref", alias={"自拍参考"})
     async def selfie_ref(self, event: AstrMessageEvent, action: str = ""):
         """自拍参考照管理：设置/查看/删除。"""
         action = (action or "").strip()
