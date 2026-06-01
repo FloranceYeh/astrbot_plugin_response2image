@@ -37,7 +37,8 @@
   - 别名：`改图`、`图生图`
 - `selfie <提示词> [--ref 图片URL] [--model 模型]` 自拍模式
   - 别名：`自拍`
-- `自拍参考 设置/查看/删除` 自拍参考照管理
+- `selfie_ref set/list/clear` 自拍参考照管理
+  - 别名：`自拍参考 设置/查看/删除`
 
 示例：
 
@@ -46,7 +47,7 @@ img 一只在雨中奔跑的柴犬，皮克斯动画风格
 aiimg 夜色霓虹城市 --model gpt-4o-mini
 aiedit 把参考图改成水彩风格 --ref https://example.com/input.png
 aiedit 把参考图加上蓝色天空 --ref C:\Images\input.jpg
-自拍参考 设置
+selfie_ref 设置 C:\Images\input.jpg
 selfie 日常自拍照，微笑，窗边自然光
 ```
 

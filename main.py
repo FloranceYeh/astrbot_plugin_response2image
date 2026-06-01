@@ -22,31 +22,61 @@ class Response2Image(Star):
         self.config = config
         self.data_dir: Path = StarTools.get_data_dir()
 
-    @filter.command("img", alias={"画图", "绘图", "r2i", "resp2img"})
+    r2i = CommandGroup(
+        "r2i",
+        alias={"r2i", "resp2img", "response2image"},
+        help="基于 Responses API 的 Astrbot 图像生成插件。"
+    )
+
+    @r2i.default()
+    async def r2i_help(self, event: AstrMessageEvent):
+        yield event.plain_result(
+            "可用子命令：\n"
+            "/r2i img 自动\n"
+            "/r2i aiimg 文生图\n"
+            "/r2i aiedit 改图\n"
+            "/r2i selfie 自拍\n"
+            "/r2i selfie_ref 设置/查看/删除"
+        )
+
+    @r2i.command("help")
+    async def r2i_help_detail(self, event: AstrMessageEvent):
+        yield event.plain_result(
+            "r2i 图像生成系统\n"
+            "• /r2i img <提示词> [--ref 图片URL] [--model 模型]      自动判断文生图/改图\n"
+            "• /r2i aiimg <提示词> [--model 模型]      文生图\n"
+            "• /r2i aiedit <提示词> [--ref 图片URL] [--model 模型]      图生图\n"
+            "• /r2i selfie <提示词> [--ref 图片URL] [--model 模型]      自拍\n"
+            "• /r2i selfie_ref set       发送或引用图片后执行\n"
+            "• /r2i selfie_ref list      查看已保存的参考图\n"
+            "• /r2i selfie_ref clear     清空所有参考图\n"
+        )
+
+    r2i.command("img", alias={"画图", "绘图"})
     async def img(self, event: AstrMessageEvent, prompt: str):
         """自动判断文生图或改图。"""
         async for result in self._generate(event, prompt, mode="auto"):
             yield result
 
-    @filter.command("aiimg", alias={"文生图", "生图"})
+    r2i.command("aiimg", alias={"文生图", "生图"})
     async def aiimg(self, event: AstrMessageEvent, prompt: str):
         """文生图模式。"""
         async for result in self._generate(event, prompt, mode="text"):
             yield result
 
-    @filter.command("aiedit", alias={"改图", "图生图"})
+    r2i.command("aiedit", alias={"改图", "图生图"})
     async def aiedit(self, event: AstrMessageEvent, prompt: str):
         """改图模式。"""
         async for result in self._generate(event, prompt, mode="edit"):
             yield result
 
-    @filter.command("selfie", alias={"自拍"})
+    r2i.command("selfie", alias={"自拍"})
     async def selfie(self, event: AstrMessageEvent, prompt: str):
         """自拍模式。"""
         async for result in self._generate(event, prompt, mode="selfie"):
             yield result
 
-    @filter.command("selfie_ref", alias={"自拍参考"})
+    r2i.command("selfie_ref", alias={"自拍参考"})
     async def selfie_ref(self, event: AstrMessageEvent, action: str = ""):
         """自拍参考照管理：设置/查看/删除。"""
         action = (action or "").strip()
@@ -79,8 +109,44 @@ class Response2Image(Star):
             count = self._clear_selfie_refs()
             yield event.plain_result(f"已删除自拍参考照 {count} 张。")
             return
-
         yield event.plain_result("用法：自拍参考 设置/查看/删除")
+
+    @filter.llm_tool(name="r2i_aiimg")
+    async def llm_r2i_aiimg(self, event: AstrMessageEvent, prompt: str):
+        """
+        文生图
+        aiimg <提示词> [--model 模型]
+
+        Args:
+            prompt: 生成图片的提示词，支持使用 --model 指定模型。
+        """
+        async for result in self._generate(event, prompt, mode="text"):
+            yield result
+
+    @filter.llm_tool(name="r2i_aiedit")
+    async def llm_r2i_aiedit(self, event: AstrMessageEvent, prompt: str):
+        """
+        改图
+        aiedit <提示词> [--ref 图片URL] [--model 模型]
+
+        Args:
+            prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
+        """
+        async for result in self._generate(event, prompt, mode="edit"):
+            yield result
+
+    @filter.llm_tool(name="r2i_selfie")
+    async def llm_r2i_selfie(self, event: AstrMessageEvent, prompt: str):
+        """
+        自拍
+        selfie <提示词> [--ref 图片URL] [--model 模型]
+
+        Args:
+            prompt: 生成图片的提示词，支持使用 --ref 指定参考图片 URL（逗号分隔多个）和 --model 指定模型。
+        """
+        async for result in self._generate(event, prompt, mode="selfie"):
+            yield result
+
 
     async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
         try:
