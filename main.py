@@ -16,6 +16,13 @@ import astrbot.api.message_components as Comp
 from astrbot.api.star import Context, Star, StarTools
 
 
+class GenerationResult:
+    def __init__(self, response: Any, llm_text: str, has_image: bool = False):
+        self.response = response
+        self.llm_text = llm_text
+        self.has_image = has_image
+
+
 class Response2Image(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -110,8 +117,7 @@ class Response2Image(Star):
         Args:
             prompt(string): 图片生成提示词，支持使用 --ref。
         """
-        async for result in self._generate(event, prompt, mode="auto"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="auto")
 
     @filter.llm_tool(name="r2i_aiimg")
     async def llm_r2i_aiimg(
@@ -125,8 +131,7 @@ class Response2Image(Star):
         Args:
             prompt(string): 图片生成提示词。
         """
-        async for result in self._generate(event, prompt, mode="text"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="text")
 
     @filter.llm_tool(name="r2i_aiedit")
     async def llm_r2i_aiedit(
@@ -140,8 +145,7 @@ class Response2Image(Star):
         Args:
             prompt(string): 图片编辑提示词，支持使用 --ref。
         """
-        async for result in self._generate(event, prompt, mode="edit"):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="edit")
 
     @filter.llm_tool(name="r2i_selfie")
     async def llm_r2i_selfie(
@@ -155,56 +159,52 @@ class Response2Image(Star):
         Args:
             prompt(string): 自拍图提示词，支持使用 --ref。
         """
-        async for result in self._generate(event, prompt, mode="selfie"):
-            yield result
-
-    @filter.llm_tool(name="r2i_selfie_ref")
-    async def llm_r2i_selfie_ref(
-        self,
-        event: AstrMessageEvent,
-        action: str = "list",
-    ) -> str:
-        """
-        管理自拍参考照。
-
-        Args:
-            action(string): 操作，可选 set、list、clear。
-        """
-        async for result in self.selfie_ref(event, action):
-            yield result
+        return await self._run_llm_tool(event, prompt, mode="selfie")
 
     async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
+        result = await self._generate_result(event, raw_prompt, mode=mode)
+        yield result.response
+
+    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> str:
+        result = await self._generate_result(event, raw_prompt, mode=mode)
+        if result.has_image:
+            await event.send(result.response)
+        return result.llm_text
+
+    async def _generate_result(
+        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str
+    ) -> GenerationResult:
         try:
             prompt, ref_urls = self._parse_prompt(raw_prompt)
         except ValueError as exc:
-            yield event.plain_result(str(exc))
-            return
+            text = str(exc)
+            return GenerationResult(event.plain_result(text), text)
 
         base_url = str(self._config_get("base_url", "")).strip()
         api_key = str(self._config_get("api_key", "")).strip()
         model = str(self._config_get("model", "")).strip()
 
         if not base_url:
-            yield event.plain_result("请在插件配置中设置 base_url。")
-            return
+            text = "请在插件配置中设置 base_url。"
+            return GenerationResult(event.plain_result(text), text)
         if not api_key:
-            yield event.plain_result("请在插件配置中设置 api_key。")
-            return
+            text = "请在插件配置中设置 api_key。"
+            return GenerationResult(event.plain_result(text), text)
         if not model:
-            yield event.plain_result("请在插件配置中设置 model。")
-            return
+            text = "请在插件配置中设置 model。"
+            return GenerationResult(event.plain_result(text), text)
 
         try:
             normalized_base = self._normalize_base_url(base_url)
         except ValueError as exc:
-            yield event.plain_result(str(exc))
-            return
+            text = str(exc)
+            return GenerationResult(event.plain_result(text), text)
 
         try:
             timeout = self._get_timeout()
         except ValueError as exc:
-            yield event.plain_result(str(exc))
-            return
+            text = str(exc)
+            return GenerationResult(event.plain_result(text), text)
 
         event_refs = self._extract_refs_from_event(event) if mode in {"auto", "edit", "selfie"} else []
         config_refs = self._get_selfie_refs_from_config() if mode == "selfie" else []
@@ -212,14 +212,14 @@ class Response2Image(Star):
             ref_urls = config_refs or self._list_selfie_ref_paths()
 
         if mode == "text" and (ref_urls or event_refs):
-            yield event.plain_result("文生图模式不使用参考图，请改用改图或自拍。")
-            return
+            text = "文生图模式不使用参考图，请改用改图或自拍。"
+            return GenerationResult(event.plain_result(text), text)
         if mode == "edit" and not (ref_urls or event_refs):
-            yield event.plain_result("改图需要参考图片，请发送/引用图片或使用 --ref。")
-            return
+            text = "改图需要参考图片，请发送/引用图片或使用 --ref。"
+            return GenerationResult(event.plain_result(text), text)
         if mode == "selfie" and not (ref_urls or event_refs):
-            yield event.plain_result("未设置自拍参考照，请先使用“自拍参考 设置”。")
-            return
+            text = "未设置自拍参考照，请先使用“自拍参考 设置”。"
+            return GenerationResult(event.plain_result(text), text)
 
         merged_refs = self._merge_refs(ref_urls, event_refs)
         resolved_mode = self._resolve_mode(mode, merged_refs)
@@ -236,19 +236,19 @@ class Response2Image(Star):
                 try:
                     ref_images = await self._normalize_ref_images(merged_refs, client)
                 except ValueError as exc:
-                    yield event.plain_result(str(exc))
-                    return
+                    text = str(exc)
+                    return GenerationResult(event.plain_result(text), text)
                 if resolved_mode in {"edit", "selfie"} and not ref_images:
-                    yield event.plain_result("参考图片不可用，请检查图片是否可访问。")
-                    return
+                    text = "参考图片不可用，请检查图片是否可访问。"
+                    return GenerationResult(event.plain_result(text), text)
 
                 payload = self._build_payload(prompt, model, ref_images, resolved_mode)
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     if response.status_code >= 400:
                         body = await response.aread()
                         detail = body.decode("utf-8", "ignore")[:500]
-                        yield event.plain_result(f"请求失败：HTTP {response.status_code} {detail}")
-                        return
+                        text = f"请求失败：HTTP {response.status_code} {detail}"
+                        return GenerationResult(event.plain_result(text), text)
 
                     async for line in response.aiter_lines():
                         line = line.strip()
@@ -280,20 +280,25 @@ class Response2Image(Star):
                         file_path = self._write_image(image_bytes)
                         size_str = self._format_size(len(image_bytes))
                         label = self._mode_label(resolved_mode)
+                        status_text = f"{label}完成（{size_str}）"
                         chain = [
-                            Comp.Plain(f"{label}完成（{size_str}）"),
+                            Comp.Plain(status_text),
                             Comp.Image.fromFileSystem(str(file_path)),
                         ]
-                        yield event.chain_result(chain)
-                        return
+                        return GenerationResult(
+                            event.chain_result(chain),
+                            status_text,
+                            has_image=True,
+                        )
 
             if image_error:
-                yield event.plain_result(image_error)
-                return
-            yield event.plain_result("未收到图片结果，请检查模型是否支持 image_generation。")
+                return GenerationResult(event.plain_result(image_error), image_error)
+            text = "未收到图片结果，请检查模型是否支持 image_generation。"
+            return GenerationResult(event.plain_result(text), text)
         except httpx.HTTPError as exc:
             logger.error(f"请求失败: {exc}")
-            yield event.plain_result(f"请求失败：{exc}")
+            text = f"请求失败：{exc}"
+            return GenerationResult(event.plain_result(text), text)
 
     def _config_get(self, key: str, default: Any) -> Any:
         if self.config is None:
