@@ -13,7 +13,7 @@
 
 ## 安装
 
-将仓库放入 `AstrBot/data/plugins/` 目录后，在 WebUI 插件管理中启用并配置。
+在WebUI中使用`https://github.com/FloranceYeh/astrbot_plugin_response2image`git地址安装插件，或将仓库放入 `AstrBot/data/plugins/` 目录后，在 WebUI 插件管理中启用并配置。
 
 ## 配置
 
@@ -27,7 +27,7 @@
 
 ## 使用
 
-命令：
+### 命令：
 
 - `img <提示词> [--ref 图片URL] [--model 模型]` 自动模式（有图则改图，无图则文生图）
   - 别名：`画图` `绘图` `r2i` `resp2img`、
@@ -50,6 +50,12 @@ aiedit 把参考图加上蓝色天空 --ref C:\Images\input.jpg
 selfie_ref 设置 C:\Images\input.jpg
 selfie 日常自拍照，微笑，窗边自然光
 ```
+
+### LLM_Tool:
+
+- `r2i_aiimg` 文生图
+- `r2i_aiedit` 改图
+- `r2i_selfie` 自拍
 
 ## 说明
 
