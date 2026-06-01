@@ -2,6 +2,10 @@
 
 基于 Responses API 的 AstrBot 图像生成插件，支持文生图、改图、自拍三种模式，自动保存生成图片并返回。
 
+通过 responses 的 image_generation tool 处理生图请求，实现生图不是按张计费的 images endpoint，而是按请求计费的 responses endpoint。
+
+**需要模型支持 image_generation tool**
+
 ## 功能
 
 - 通过 `/v1/responses` 流式获取图片结果
@@ -27,17 +31,14 @@
 ## 使用
 
 ### 命令：
-
-- `img <提示词> [--ref 图片URL]` 自动模式（有图则改图，无图则文生图）
-  - 别名：`画图` `绘图` `r2i` `resp2img`、
-- `aiimg <提示词>` 文生图模式
-  - 别名：`文生图`、`生图`
-- `aiedit <提示词> [--ref 图片URL]` 改图模式
-  - 别名：`改图`、`图生图`
-- `selfie <提示词> [--ref 图片URL]` 自拍模式
-  - 别名：`自拍`
-- `selfie_ref set/list/clear` 自拍参考照管理
-  - 别名：`自拍参考 设置/查看/删除`
+- `r2i` 命令组
+- 子命令：
+  - `help` 显示帮助信息
+  - `img <提示词> [--ref 图片URL]` 自动模式（有图则改图，无图则文生图）
+  - `aiimg <提示词>` 文生图模式
+  - `aiedit <提示词> [--ref 图片URL]` 改图模式
+  - `selfie <提示词> [--ref 图片URL]` 自拍模式
+  - `selfie_ref set/list/clear` 自拍参考照管理
 
 示例：
 
@@ -58,7 +59,14 @@ r2i selfie 日常自拍照，微笑，窗边自然光
 
 ## 说明
 
+- 使用`r2i`命令组内的命令时，要加上`r2i`前缀，例如`r2i img`，而不是直接使用`img`。
 - `--ref` 支持多个图片，用英文逗号分隔。
 - 若消息或引用中包含图片，会自动作为参考图参与图生图请求。
 - 自拍模式优先使用命令或消息中的参考图，否则合并使用 WebUI 配置上传和 `selfie_ref set` 保存的参考照。
 - 若未收到图片，通常是模型未调用 `image_generation` 工具或模型不支持该能力。
+
+
+## 鸣谢
+- [CodeBoy](https://github.com/CodeBoy2006) 提供了宝贵的建议和指导
+- 项目灵感来源：[CodeBoy2006/responses-images-proxy](https://github.com/CodeBoy2006/responses-images-proxy)
+- 此外，部分代码参考了 Codeboy 提供的静态前端实现
