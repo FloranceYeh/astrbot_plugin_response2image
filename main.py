@@ -41,7 +41,7 @@ DEFAULT_REFERENCE_PROMPT_WHITE = (
 )
 WHITE_REFERENCE_IMAGE_DATA_URL = (
     "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9d8AAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAC0lEQVR42mP8/58HAAMBAQAY0o4AAAAASUVORK5CYII="
 )
 
 
@@ -75,10 +75,10 @@ class Response2Image(Star):
     async def r2i_help(self, event: AstrMessageEvent):
         yield event.plain_result(
             "r2i-Response2Image\n"
-            "• /r2i img <提示词> [--ref 图片URL]      自动判断文生图/改图\n"
+            "• /r2i img <提示词> [--ref]      自动判断文生图/改图\n"
             "• /r2i aiimg <提示词>       文生图\n"
-            "• /r2i aiedit <提示词> [--ref 图片URL]      图生图\n"
-            "• /r2i selfie <提示词> [--ref 图片URL]      自拍\n"
+            "• /r2i aiedit <提示词> [--ref]      图生图\n"
+            "• /r2i selfie <提示词> [--ref]      自拍\n"
             "• /r2i selfie_ref set       发送或引用图片后执行\n"
             "• /r2i selfie_ref list      查看当前参考图\n"
             "• /r2i selfie_ref clear     清空命令保存的参考图\n"
@@ -167,7 +167,7 @@ class Response2Image(Star):
         自动判断文生图或改图。
 
         Args:
-            prompt(string): 图片生成提示词，支持使用 [--ref 图片URL]。
+            prompt(string): 图片生成提示词，支持使用 [--ref] 参数。
         """
         return await self._run_llm_tool(event, prompt, mode="auto")
 
@@ -195,7 +195,7 @@ class Response2Image(Star):
         改图。
 
         Args:
-            prompt(string): 图片编辑提示词，支持使用 [--ref 图片URL]。
+            prompt(string): 图片编辑提示词，支持使用 [--ref] 参数。
         """
         return await self._run_llm_tool(event, prompt, mode="edit")
 
@@ -209,7 +209,7 @@ class Response2Image(Star):
         自拍。
 
         Args:
-            prompt(string): 自拍图提示词，支持使用 [--ref 图片URL]。
+            prompt(string): 自拍图提示词，支持使用 [--ref] 参数。
         """
         return await self._run_llm_tool(event, prompt, mode="selfie")
 

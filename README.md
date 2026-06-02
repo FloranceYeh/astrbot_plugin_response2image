@@ -40,10 +40,10 @@
 - `r2i` 命令组
 - 子命令：
   - `help` 显示帮助信息
-  - `img <提示词> [--ref 图片URL]` 自动模式（有图则改图，无图则文生图）
+  - `img <提示词> [--ref]` 自动模式（有图则改图，无图则文生图）
   - `aiimg <提示词>` 文生图模式
-  - `aiedit <提示词> [--ref 图片URL]` 改图模式
-  - `selfie <提示词> [--ref 图片URL]` 自拍模式
+  - `aiedit <提示词> [--ref]` 改图模式
+  - `selfie <提示词> [--ref]` 自拍模式
   - `selfie_ref set/list/clear` 自拍参考照管理
 
 示例：
