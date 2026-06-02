@@ -2,30 +2,33 @@
   "base_url": {
     "description": "Base URL",
     "type": "string",
-    "hint": "例如 https://api.openai.com",
+    "hint": "For example: https://api.openai.com",
     "default": ""
   },
   "api_key": {
     "description": "API Key",
     "type": "string",
-    "hint": "第三方服务密钥",
+    "hint": "API key for the image generation service",
     "default": ""
   },
   "model": {
-    "description": "模型 ID",
+    "description": "Model ID",
     "type": "string",
-    "hint": "例如 gpt-4o-mini",
+    "hint": "For example: gpt-5.3-codex (the model must be able to use the image_generation tool)",
     "default": ""
   },
   "timeout_seconds": {
-    "description": "请求超时（秒）",
+    "description": "Request timeout in seconds",
     "type": "int",
-    "default": 120
+    "default": 200
   },
   "selfie_reference_images": {
-    "description": "自拍参考图",
-    "type": "file",
-    "hint": "在 WebUI 直接上传参考图；会与“自拍参考 设置”保存的图片合并使用",
-    "default": ""
+    "description": "Selfie reference images",
+    "type": "list",
+    "items": {
+      "type": "file"
+    },
+    "hint": "Upload one or more reference images in WebUI. They will be merged with images saved by the selfie_ref set command.",
+    "default": []
   }
 }
