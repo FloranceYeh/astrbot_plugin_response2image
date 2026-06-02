@@ -186,8 +186,12 @@ class Response2Image(Star):
         result = await self._generate_result(event, raw_prompt, mode=mode)
         yield result.response
 
-    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> str:
+    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> Any:
         result = await self._generate_result(event, raw_prompt, mode=mode)
+        if result.has_image:
+            if self._get_llm_return_mode() == "image_object":
+                return result.response
+            return result.image_path or result.llm_text
         return result.llm_text
 
     async def _generate_result(
@@ -329,6 +333,12 @@ class Response2Image(Star):
         if hasattr(self.config, "get"):
             return self.config.get(key, default)
         return getattr(self.config, key, default)
+
+    def _get_llm_return_mode(self) -> str:
+        mode = str(self._config_get("llm_return_mode", "image_path")).strip().lower()
+        if mode in {"image_object", "image_path"}:
+            return mode
+        return "image_path"
 
     def _normalize_base_url(self, base_url: str) -> str:
         base = base_url.strip()

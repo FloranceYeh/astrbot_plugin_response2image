@@ -13,6 +13,7 @@
 - 支持 `--ref` 参考图（URL / data:image / 本地文件路径）
 - 自动从消息/引用里提取图片作为参考图
 - 生成图片保存到 `data/plugin_data/astrbot_plugin_response2image/generated`
+  - 文件名格式：`resp2img_%Y%m%d_%H%M%S.png`
 
 ## 安装
 
