@@ -23,11 +23,13 @@ class GenerationResult:
         llm_text: str,
         has_image: bool = False,
         image_path: str | None = None,
+        image_data: dict[str, Any] | None = None,
     ):
         self.response = response
         self.llm_text = llm_text
         self.has_image = has_image
         self.image_path = image_path
+        self.image_data = image_data
 
 
 class Response2Image(Star):
@@ -186,12 +188,10 @@ class Response2Image(Star):
         result = await self._generate_result(event, raw_prompt, mode=mode)
         yield result.response
 
-    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> Any:
+    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> str:
         result = await self._generate_result(event, raw_prompt, mode=mode)
         if result.has_image:
-            if self._get_llm_return_mode() == "image_object":
-                return result.response
-            return result.image_path or result.llm_text
+            return json.dumps(result.image_data or {}, ensure_ascii=False)
         return result.llm_text
 
     async def _generate_result(
@@ -305,6 +305,14 @@ class Response2Image(Star):
                         label = self._mode_label(resolved_mode)
                         status_text = f"{label}完成（{size_str}）"
                         llm_text = f"{status_text}\n图片路径：{resolved_path}"
+                        image_data = {
+                            "type": "image",
+                            "path": resolved_path,
+                            "size_bytes": len(image_bytes),
+                            "size_text": size_str,
+                            "mode": resolved_mode,
+                            "status": status_text,
+                        }
                         chain = [
                             # Comp.Plain(status_text),
                             Comp.Image.fromFileSystem(str(file_path)),
@@ -314,6 +322,7 @@ class Response2Image(Star):
                             llm_text,
                             has_image=True,
                             image_path=resolved_path,
+                            image_data=image_data,
                         )
 
             if image_error:
@@ -333,12 +342,6 @@ class Response2Image(Star):
         if hasattr(self.config, "get"):
             return self.config.get(key, default)
         return getattr(self.config, key, default)
-
-    def _get_llm_return_mode(self) -> str:
-        mode = str(self._config_get("llm_return_mode", "image_path")).strip().lower()
-        if mode in {"image_object", "image_path"}:
-            return mode
-        return "image_path"
 
     def _normalize_base_url(self, base_url: str) -> str:
         base = base_url.strip()
