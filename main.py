@@ -15,6 +15,21 @@ from astrbot.api.event import AstrMessageEvent, filter
 import astrbot.api.message_components as Comp
 from astrbot.api.star import Context, Star, StarTools
 
+UPSTREAM_IMAGE_RETRY_INSTRUCTION = (
+    "重要指示：如果 image_generation 未产出图片，请在不改变核心意图的前提下改写提示词并再次调用，"
+    "直到成功生成图片，否则继续重试，不得中途停止。"
+)
+
+UPSTREAM_IMAGE_SYSTEM_PROMPT = "\n".join(
+    [
+        "你是专业图片生成代理。目标是调用 image_generation 工具直接产出图片，不用文字描述代替图片。",
+        "调用工具前，将需求整理为简洁、可执行的视觉提示词；保留硬约束，适度补足构图、主体、动作、场景、光线、色彩、材质、镜头、背景、风格和细节。如果需求中有明确的风格要求，需要遵循。",
+        "不要擅自增加水印、Logo、签名、边框、乱码或无关文字。",
+        UPSTREAM_IMAGE_RETRY_INSTRUCTION,
+        "最终只产出图片，不解释改写过程，不输出 Markdown 或无关文本。",
+    ]
+)
+
 
 class GenerationResult:
     def __init__(
@@ -417,16 +432,40 @@ class Response2Image(Star):
             return "自拍"
         return "文生图"
 
-    def _build_edit_prompt(self, prompt: str, mode: str) -> str:
-        if mode == "selfie":
-            return (
-                "请根据提供的人像参考生成自拍风格图片，保持人物一致。要求："
-                + prompt
-            )
-        return (
-            "请根据以下要求，对我提供的参考图片进行编辑修改，直接生成修改后的新图片。要求："
-            + prompt
-        )
+    def _build_upstream_image_prompt(
+        self, prompt: str, mode: str, has_reference_images: bool
+    ) -> str:
+        task_lines: list[str] = [
+            "请直接调用 image_generation 工具完成图片任务。",
+            "先整理为一条清晰、可执行的视觉提示词，再调用工具。",
+            "保留用户要求的主体、动作、场景、风格、文字、比例、禁止事项等硬约束。",
+            "可适度补充构图、镜头、光线、色彩、材质、空间关系和清晰度；不要引入与主题冲突的元素。",
+            "如用户要求包含文字，保持文字内容一致、简洁、清晰可读。",
+            UPSTREAM_IMAGE_RETRY_INSTRUCTION,
+            "只输出 image_generation 工具生成的图片结果；不要输出解释、分析、Markdown 或纯文本替代答案。",
+        ]
+
+        reference_lines: list[str] = []
+        if has_reference_images:
+            if mode == "selfie":
+                reference_lines.append(
+                    "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
+                )
+            elif mode == "edit":
+                reference_lines.append(
+                    "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
+                )
+            else:
+                reference_lines.append(
+                    "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
+                )
+
+        lines = list(task_lines)
+        if reference_lines:
+            lines.extend(["", "参考图片处理："])
+            lines.extend(f"- {line}" for line in reference_lines)
+        lines.extend(["", "用户原始需求如下：", prompt])
+        return "\n".join(lines)
 
     async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
@@ -450,13 +489,16 @@ class Response2Image(Star):
         return normalized
 
     def _build_payload(self, prompt: str, model: str, ref_images: list[str], mode: str) -> dict:
+        user_prompt = self._build_upstream_image_prompt(prompt, mode, bool(ref_images))
         if mode in {"edit", "selfie"}:
-            edit_prompt = self._build_edit_prompt(prompt, mode)
             content = [{"type": "input_image", "image_url": url} for url in ref_images]
-            content.append({"type": "input_text", "text": edit_prompt})
+            content.append({"type": "input_text", "text": user_prompt})
             return {
                 "model": model,
-                "input": [{"role": "user", "content": content}],
+                "input": [
+                    {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": content},
+                ],
                 "tools": [{"type": "image_generation", "output_format": "png"}],
                 "stream": True,
             }
@@ -464,14 +506,8 @@ class Response2Image(Star):
         return {
             "model": model,
             "input": [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一个图片生成助手。用户要求你生成图片时，你必须调用 image_generation 工具来生成图片，"
-                        "不要用文字描述图片内容。直接生成图片，不要多说任何话。"
-                    ),
-                },
-                {"role": "user", "content": f"请生成以下描述的图片：{prompt}"},
+                {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
             ],
             "tools": [{"type": "image_generation", "output_format": "png"}],
             "stream": True,
