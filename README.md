@@ -28,7 +28,6 @@
 - `api_key`: 接口密钥
 - `model`: 模型 ID（需支持 `image_generation` 工具）
 - `timeout_seconds`: 请求超时（秒）
-- `reference_prompt_general`: 仅在任务包含参考图且不处于改图/自拍模式时使用。支持多行，每行非空行作为一条指令。
 - `reference_prompt_edit`: 仅在改图模式或自动模式且包含参考图时使用。支持多行，每行非空行作为一条指令。
 - `reference_prompt_selfie`: 仅在自拍模式使用。支持多行，每行非空行作为一条指令。
 - `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）

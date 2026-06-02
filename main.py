@@ -30,9 +30,6 @@ UPSTREAM_IMAGE_SYSTEM_PROMPT = "\n".join(
     ]
 )
 
-DEFAULT_REFERENCE_PROMPT_GENERAL = (
-    "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
-)
 DEFAULT_REFERENCE_PROMPT_EDIT = (
     "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
 )
@@ -473,9 +470,6 @@ class Response2Image(Star):
         elif mode == "edit":
             key = "reference_prompt_edit"
             default = DEFAULT_REFERENCE_PROMPT_EDIT
-        else:
-            key = "reference_prompt_general"
-            default = DEFAULT_REFERENCE_PROMPT_GENERAL
 
         raw = self._config_get(key, default)
         text = raw if isinstance(raw, str) else default

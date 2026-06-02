@@ -22,12 +22,6 @@
     "type": "int",
     "default": 200
   },
-  "reference_prompt_general": {
-    "description": "General reference-image prompt",
-    "type": "text",
-    "hint": "Used when a task contains reference images and is not in edit/selfie mode. Supports multiple lines; each non-empty line becomes one instruction.",
-    "default": "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
-  },
   "reference_prompt_edit": {
     "description": "Edit-mode reference-image prompt",
     "type": "text",
