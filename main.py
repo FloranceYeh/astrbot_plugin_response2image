@@ -17,10 +17,17 @@ from astrbot.api.star import Context, Star, StarTools
 
 
 class GenerationResult:
-    def __init__(self, response: Any, llm_text: str, has_image: bool = False):
+    def __init__(
+        self,
+        response: Any,
+        llm_text: str,
+        has_image: bool = False,
+        image_path: str | None = None,
+    ):
         self.response = response
         self.llm_text = llm_text
         self.has_image = has_image
+        self.image_path = image_path
 
 
 class Response2Image(Star):
@@ -289,17 +296,20 @@ class Response2Image(Star):
                             continue
 
                         file_path = self._write_image(image_bytes)
+                        resolved_path = str(file_path.resolve())
                         size_str = self._format_size(len(image_bytes))
                         label = self._mode_label(resolved_mode)
                         status_text = f"{label}完成（{size_str}）"
+                        llm_text = f"{status_text}\n图片路径：{resolved_path}"
                         chain = [
                             # Comp.Plain(status_text),
                             Comp.Image.fromFileSystem(str(file_path)),
                         ]
                         return GenerationResult(
                             event.chain_result(chain),
-                            status_text,
+                            llm_text,
                             has_image=True,
+                            image_path=resolved_path,
                         )
 
             if image_error:
