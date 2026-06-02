@@ -39,8 +39,7 @@ DEFAULT_REFERENCE_PROMPT_SELFIE = (
 DEFAULT_REFERENCE_PROMPT_WHITE = (
     "该参考图为纯白占位图，仅用于稳定生成流程与强化对文本指令的遵循，不提供任何可继承的主体、构图、风格或细节信息；请忽略其视觉内容，不要把白底、空白画面、留白构图或极简白色背景当作目标效果，仍以用户原始需求为唯一主要依据完成正常文生图"
 )
-WHITE_REFERENCE_IMAGE_DATA_URL = (
-    "data:image/png;base64,"
+WHITE_REFERENCE_IMAGE_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAC0lEQVR42mP8/58HAAMBAQAY0o4AAAAASUVORK5CYII="
 )
 
@@ -276,7 +275,7 @@ class Response2Image(Star):
         resolved_mode = self._resolve_mode(mode, merged_refs)
         request_refs = list(merged_refs)
         if resolved_mode == "text" and self._should_use_white_reference_in_text_mode():
-            request_refs.append(WHITE_REFERENCE_IMAGE_DATA_URL)
+            request_refs.append(str(self._ensure_white_reference_image_path()))
         url = normalized_base + "/v1/responses"
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -493,6 +492,14 @@ class Response2Image(Star):
 
     def _should_use_white_reference_in_text_mode(self) -> bool:
         return bool(self._config_get("text_mode_use_white_reference_image", False))
+
+    def _ensure_white_reference_image_path(self) -> Path:
+        asset_dir = self.data_dir / "runtime_assets"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        image_path = asset_dir / "white_reference.png"
+        if not image_path.is_file():
+            image_path.write_bytes(base64.b64decode(WHITE_REFERENCE_IMAGE_BASE64))
+        return image_path
 
     async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
