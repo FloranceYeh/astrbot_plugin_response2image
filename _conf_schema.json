@@ -34,6 +34,12 @@
     "hint": "Used for selfie mode. Supports multiple lines; each non-empty line becomes one instruction.",
     "default": "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
   },
+  "text_mode_use_white_reference_image": {
+    "description": "Use white reference image in text mode",
+    "type": "bool",
+    "hint": "When enabled, text-to-image mode silently adds one built-in white image as a reference to reduce upstream model dilution.",
+    "default": false
+  },
   "selfie_reference_images": {
     "description": "Selfie reference images",
     "type": "file",

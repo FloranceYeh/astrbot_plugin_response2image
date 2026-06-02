@@ -13,6 +13,7 @@
 - 支持 `--ref` 参考图（URL / data:image / 本地文件路径）
 - 自动从消息/引用里提取图片作为参考图
 - 可在 WebUI 配置参考图指令，针对不同模式提供额外提示
+- 可配置是否在文生图模式默认添加一张内置白图作为参考，以减少上游模型稀释
 - 生成图片保存到 `data/plugin_data/astrbot_plugin_response2image/generated`
   - 文件名格式：`resp2img_%Y%m%d_%H%M%S.png`
 
@@ -30,6 +31,7 @@
 - `timeout_seconds`: 请求超时（秒）
 - `reference_prompt_edit`: 仅在改图模式或自动模式且包含参考图时使用。支持多行，每行非空行作为一条指令。
 - `reference_prompt_selfie`: 仅在自拍模式使用。支持多行，每行非空行作为一条指令。
+- `text_mode_use_white_reference_image`: （启用后，文生图模式会默默添加一张内置白图作为参考，以减少上游模型稀释）
 - `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）
 
 ## 使用

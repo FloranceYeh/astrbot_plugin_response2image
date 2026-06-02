@@ -36,6 +36,10 @@ DEFAULT_REFERENCE_PROMPT_EDIT = (
 DEFAULT_REFERENCE_PROMPT_SELFIE = (
     "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
 )
+WHITE_REFERENCE_IMAGE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9d8AAAAASUVORK5CYII="
+)
 
 
 class GenerationResult:
@@ -267,6 +271,9 @@ class Response2Image(Star):
 
         merged_refs = self._merge_refs(ref_urls, event_refs)
         resolved_mode = self._resolve_mode(mode, merged_refs)
+        request_refs = list(merged_refs)
+        if resolved_mode == "text" and self._should_use_white_reference_in_text_mode():
+            request_refs.append(WHITE_REFERENCE_IMAGE_DATA_URL)
         url = normalized_base + "/v1/responses"
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -278,7 +285,7 @@ class Response2Image(Star):
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 try:
-                    ref_images = await self._normalize_ref_images(merged_refs, client)
+                    ref_images = await self._normalize_ref_images(request_refs, client)
                 except ValueError as exc:
                     text = str(exc)
                     return GenerationResult(event.plain_result(text), text)
@@ -478,6 +485,9 @@ class Response2Image(Star):
             return []
         return [line.strip() for line in text.splitlines() if line.strip()]
 
+    def _should_use_white_reference_in_text_mode(self) -> bool:
+        return bool(self._config_get("text_mode_use_white_reference_image", False))
+
     async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
         for ref in refs:
@@ -501,7 +511,7 @@ class Response2Image(Star):
 
     def _build_payload(self, prompt: str, model: str, ref_images: list[str], mode: str) -> dict:
         user_prompt = self._build_upstream_image_prompt(prompt, mode, bool(ref_images))
-        if mode in {"edit", "selfie"}:
+        if ref_images:
             content = [{"type": "input_image", "image_url": url} for url in ref_images]
             content.append({"type": "input_text", "text": user_prompt})
             return {
