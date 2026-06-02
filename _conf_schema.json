@@ -22,6 +22,24 @@
     "type": "int",
     "default": 200
   },
+  "reference_prompt_general": {
+    "description": "General reference-image prompt",
+    "type": "text",
+    "hint": "Used when a task contains reference images and is not in edit/selfie mode. Supports multiple lines; each non-empty line becomes one instruction.",
+    "default": "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
+  },
+  "reference_prompt_edit": {
+    "description": "Edit-mode reference-image prompt",
+    "type": "text",
+    "hint": "Used for aiedit or auto mode with reference images. Supports multiple lines; each non-empty line becomes one instruction.",
+    "default": "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
+  },
+  "reference_prompt_selfie": {
+    "description": "Selfie-mode reference-image prompt",
+    "type": "text",
+    "hint": "Used for selfie mode. Supports multiple lines; each non-empty line becomes one instruction.",
+    "default": "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
+  },
   "selfie_reference_images": {
     "description": "Selfie reference images",
     "type": "file",

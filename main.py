@@ -30,6 +30,16 @@ UPSTREAM_IMAGE_SYSTEM_PROMPT = "\n".join(
     ]
 )
 
+DEFAULT_REFERENCE_PROMPT_GENERAL = (
+    "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
+)
+DEFAULT_REFERENCE_PROMPT_EDIT = (
+    "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
+)
+DEFAULT_REFERENCE_PROMPT_SELFIE = (
+    "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
+)
+
 
 class GenerationResult:
     def __init__(
@@ -447,18 +457,7 @@ class Response2Image(Star):
 
         reference_lines: list[str] = []
         if has_reference_images:
-            if mode == "selfie":
-                reference_lines.append(
-                    "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
-                )
-            elif mode == "edit":
-                reference_lines.append(
-                    "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
-                )
-            else:
-                reference_lines.append(
-                    "参考图片仅作为视觉依据；以用户原始需求为准，只沿用用户要求保留的主体、风格、构图或关键元素。"
-                )
+            reference_lines.extend(self._get_reference_prompt_lines(mode))
 
         lines = list(task_lines)
         if reference_lines:
@@ -466,6 +465,24 @@ class Response2Image(Star):
             lines.extend(f"- {line}" for line in reference_lines)
         lines.extend(["", "用户原始需求如下：", prompt])
         return "\n".join(lines)
+
+    def _get_reference_prompt_lines(self, mode: str) -> list[str]:
+        if mode == "selfie":
+            key = "reference_prompt_selfie"
+            default = DEFAULT_REFERENCE_PROMPT_SELFIE
+        elif mode == "edit":
+            key = "reference_prompt_edit"
+            default = DEFAULT_REFERENCE_PROMPT_EDIT
+        else:
+            key = "reference_prompt_general"
+            default = DEFAULT_REFERENCE_PROMPT_GENERAL
+
+        raw = self._config_get(key, default)
+        text = raw if isinstance(raw, str) else default
+        text = text.strip()
+        if not text:
+            return []
+        return [line.strip() for line in text.splitlines() if line.strip()]
 
     async def _normalize_ref_images(self, refs: list[str], client: httpx.AsyncClient) -> list[str]:
         normalized: list[str] = []
