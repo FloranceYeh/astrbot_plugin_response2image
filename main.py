@@ -129,7 +129,7 @@ class Response2Image(Star):
         自动判断文生图或改图。
 
         Args:
-            prompt(string): 图片生成提示词，支持使用 --ref。
+            prompt(string): 图片生成提示词，支持使用 [--ref 图片URL]。
         """
         return await self._run_llm_tool(event, prompt, mode="auto")
 
@@ -157,7 +157,7 @@ class Response2Image(Star):
         改图。
 
         Args:
-            prompt(string): 图片编辑提示词，支持使用 --ref。
+            prompt(string): 图片编辑提示词，支持使用 [--ref 图片URL]。
         """
         return await self._run_llm_tool(event, prompt, mode="edit")
 
@@ -171,7 +171,7 @@ class Response2Image(Star):
         自拍。
 
         Args:
-            prompt(string): 自拍图提示词，支持使用 --ref。
+            prompt(string): 自拍图提示词，支持使用 [--ref 图片URL]。
         """
         return await self._run_llm_tool(event, prompt, mode="selfie")
 
@@ -181,8 +181,6 @@ class Response2Image(Star):
 
     async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> str:
         result = await self._generate_result(event, raw_prompt, mode=mode)
-        if result.has_image:
-            await event.send(result.response)
         return result.llm_text
 
     async def _generate_result(
