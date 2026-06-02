@@ -12,6 +12,7 @@
 - 文生图 / 改图 / 自拍三种模式
 - 支持 `--ref` 参考图（URL / data:image / 本地文件路径）
 - 自动从消息/引用里提取图片作为参考图
+- 可在 WebUI 配置参考图指令，针对不同模式提供额外提示
 - 生成图片保存到 `data/plugin_data/astrbot_plugin_response2image/generated`
   - 文件名格式：`resp2img_%Y%m%d_%H%M%S.png`
 
@@ -27,6 +28,9 @@
 - `api_key`: 接口密钥
 - `model`: 模型 ID（需支持 `image_generation` 工具）
 - `timeout_seconds`: 请求超时（秒）
+- `reference_prompt_general`: 仅在任务包含参考图且不处于改图/自拍模式时使用。支持多行，每行非空行作为一条指令。
+- `reference_prompt_edit`: 仅在改图模式或自动模式且包含参考图时使用。支持多行，每行非空行作为一条指令。
+- `reference_prompt_selfie`: 仅在自拍模式使用。支持多行，每行非空行作为一条指令。
 - `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）
 
 ## 使用
