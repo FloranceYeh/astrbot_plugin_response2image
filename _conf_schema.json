@@ -24,10 +24,7 @@
   },
   "selfie_reference_images": {
     "description": "Selfie reference images",
-    "type": "list",
-    "items": {
-      "type": "file"
-    },
+    "type": "file",
     "hint": "Upload one or more reference images in WebUI. They will be merged with images saved by the selfie_ref set command.",
     "default": []
   }
