@@ -36,6 +36,9 @@ DEFAULT_REFERENCE_PROMPT_EDIT = (
 DEFAULT_REFERENCE_PROMPT_SELFIE = (
     "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
 )
+DEFAULT_REFERENCE_PROMPT_WHITE = (
+    "该参考图为纯白占位图，仅用于稳定生成流程与强化对文本指令的遵循，不提供任何可继承的主体、构图、风格或细节信息；请忽略其视觉内容，不要把白底、空白画面、留白构图或极简白色背景当作目标效果，仍以用户原始需求为唯一主要依据完成正常文生图"
+)
 WHITE_REFERENCE_IMAGE_DATA_URL = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9d8AAAAASUVORK5CYII="
@@ -477,6 +480,9 @@ class Response2Image(Star):
         elif mode == "edit":
             key = "reference_prompt_edit"
             default = DEFAULT_REFERENCE_PROMPT_EDIT
+        else:
+            key = "reference_prompt_white"
+            default = DEFAULT_REFERENCE_PROMPT_WHITE
 
         raw = self._config_get(key, default)
         text = raw if isinstance(raw, str) else default
