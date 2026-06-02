@@ -47,27 +47,31 @@ class Response2Image(Star):
         )
 
     @r2i.command("img")
-    async def img(self, event: AstrMessageEvent, prompt: str):
+    async def img(self, event: AstrMessageEvent, prompt: str = ""):
         """自动判断文生图或改图。"""
-        async for result in self._generate(event, prompt, mode="auto"):
+        raw_prompt = self._resolve_command_prompt(event, "img", prompt)
+        async for result in self._generate(event, raw_prompt, mode="auto"):
             yield result
 
     @r2i.command("aiimg")
-    async def aiimg(self, event: AstrMessageEvent, prompt: str):
+    async def aiimg(self, event: AstrMessageEvent, prompt: str = ""):
         """文生图模式。"""
-        async for result in self._generate(event, prompt, mode="text"):
+        raw_prompt = self._resolve_command_prompt(event, "aiimg", prompt)
+        async for result in self._generate(event, raw_prompt, mode="text"):
             yield result
 
     @r2i.command("aiedit")
-    async def aiedit(self, event: AstrMessageEvent, prompt: str):
+    async def aiedit(self, event: AstrMessageEvent, prompt: str = ""):
         """改图模式。"""
-        async for result in self._generate(event, prompt, mode="edit"):
+        raw_prompt = self._resolve_command_prompt(event, "aiedit", prompt)
+        async for result in self._generate(event, raw_prompt, mode="edit"):
             yield result
 
     @r2i.command("selfie")
-    async def selfie(self, event: AstrMessageEvent, prompt: str):
+    async def selfie(self, event: AstrMessageEvent, prompt: str = ""):
         """自拍模式。"""
-        async for result in self._generate(event, prompt, mode="selfie"):
+        raw_prompt = self._resolve_command_prompt(event, "selfie", prompt)
+        async for result in self._generate(event, raw_prompt, mode="selfie"):
             yield result
 
     @r2i.command("selfie_ref")
@@ -291,7 +295,7 @@ class Response2Image(Star):
                         label = self._mode_label(resolved_mode)
                         status_text = f"{label}完成（{size_str}）"
                         chain = [
-                            Comp.Plain(status_text),
+                            # Comp.Plain(status_text),
                             Comp.Image.fromFileSystem(str(file_path)),
                         ]
                         return GenerationResult(
@@ -328,6 +332,23 @@ class Response2Image(Star):
         if base.endswith("/v1"):
             base = base[:-3]
         return base
+
+    def _resolve_command_prompt(
+        self,
+        event: AstrMessageEvent,
+        command_name: str,
+        fallback_prompt: str = "",
+    ) -> str:
+        message = (event.message_str or "").strip()
+        if not message:
+            return fallback_prompt.strip()
+
+        parts = message.split(maxsplit=2)
+        if len(parts) >= 2 and parts[0].lstrip("/").lower() == "r2i" and parts[1].lower() == command_name:
+            return parts[2].strip() if len(parts) == 3 else ""
+        if parts and parts[0].lstrip("/").lower() == command_name:
+            return parts[1].strip() if len(parts) >= 2 else ""
+        return fallback_prompt.strip()
 
     def _parse_prompt(self, raw: str) -> tuple[str, list[str]]:
         tokens = shlex.split(raw)

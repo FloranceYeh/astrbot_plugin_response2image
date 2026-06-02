@@ -69,4 +69,4 @@ r2i selfie 日常自拍照，微笑，窗边自然光
 ## 鸣谢
 - [CodeBoy](https://github.com/CodeBoy2006) 提供了宝贵的建议和指导
 - 项目灵感来源：[CodeBoy2006/responses-images-proxy](https://github.com/CodeBoy2006/responses-images-proxy)
-- 此外，部分代码参考了 Codeboy 提供的静态前端实现
+- 此外，部分代码参考了 Codeboy 提供的静态纯前端版
