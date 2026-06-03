@@ -84,31 +84,65 @@ class Response2Image(Star):
         )
 
     @r2i.command("img")
-    async def img(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
+    async def img(
+        self,
+        event: AstrMessageEvent,
+        prompt: str = "",
+        ref: str = "",
+        size: str = "",
+    ):
         """自动判断文生图或改图。"""
-        raw_prompt = self._resolve_command_prompt(event, "img", prompt)
-        async for result in self._generate(event, raw_prompt, mode="auto", ref=ref):
+        raw_prompt = self._resolve_command_prompt(
+            event,
+            "img",
+            self._compose_command_fallback_prompt(prompt, ref=ref, size=size),
+        )
+        async for result in self._generate(event, raw_prompt, mode="auto"):
             yield result
 
     @r2i.command("aiimg")
-    async def aiimg(self, event: AstrMessageEvent, prompt: str = ""):
+    async def aiimg(self, event: AstrMessageEvent, prompt: str = "", size: str = ""):
         """文生图模式。"""
-        raw_prompt = self._resolve_command_prompt(event, "aiimg", prompt)
+        raw_prompt = self._resolve_command_prompt(
+            event,
+            "aiimg",
+            self._compose_command_fallback_prompt(prompt, size=size),
+        )
         async for result in self._generate(event, raw_prompt, mode="text"):
             yield result
 
     @r2i.command("aiedit")
-    async def aiedit(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
+    async def aiedit(
+        self,
+        event: AstrMessageEvent,
+        prompt: str = "",
+        ref: str = "",
+        size: str = "",
+    ):
         """改图模式。"""
-        raw_prompt = self._resolve_command_prompt(event, "aiedit", prompt)
-        async for result in self._generate(event, raw_prompt, mode="edit", ref=ref):
+        raw_prompt = self._resolve_command_prompt(
+            event,
+            "aiedit",
+            self._compose_command_fallback_prompt(prompt, ref=ref, size=size),
+        )
+        async for result in self._generate(event, raw_prompt, mode="edit"):
             yield result
 
     @r2i.command("selfie")
-    async def selfie(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
+    async def selfie(
+        self,
+        event: AstrMessageEvent,
+        prompt: str = "",
+        ref: str = "",
+        size: str = "",
+    ):
         """自拍模式。"""
-        raw_prompt = self._resolve_command_prompt(event, "selfie", prompt)
-        async for result in self._generate(event, raw_prompt, mode="selfie", ref=ref):
+        raw_prompt = self._resolve_command_prompt(
+            event,
+            "selfie",
+            self._compose_command_fallback_prompt(prompt, ref=ref, size=size),
+        )
+        async for result in self._generate(event, raw_prompt, mode="selfie"):
             yield result
 
     @r2i.command("selfie_ref")
@@ -471,6 +505,22 @@ class Response2Image(Star):
         if parts and parts[0].lstrip("/").lower() == command_name:
             return parts[1].strip() if len(parts) >= 2 else ""
         return fallback_prompt.strip()
+
+    def _compose_command_fallback_prompt(
+        self,
+        prompt: str = "",
+        *,
+        ref: str = "",
+        size: str = "",
+    ) -> str:
+        parts: list[str] = []
+        if prompt.strip():
+            parts.append(prompt.strip())
+        if ref.strip():
+            parts.extend(["--ref", ref.strip()])
+        if size.strip():
+            parts.extend(["--size", size.strip()])
+        return " ".join(parts)
 
     def _resolve_generation_inputs(
         self,
