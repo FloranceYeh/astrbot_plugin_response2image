@@ -80,7 +80,7 @@ class Response2Image(Star):
             "• /r2i selfie <提示词> [--ref]\n    自拍\n"
             "• /r2i selfie_ref set\n    发送或引用图片后执行\n"
             "• /r2i selfie_ref list\n    查看当前参考图\n"
-            "• /r2i selfie_ref clear\n    清空命令保存的参考图\n"
+            "• /r2i selfie_ref clear\n    清空命令保存的参考图"
         )
 
     @r2i.command("img")
