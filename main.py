@@ -74,10 +74,10 @@ class Response2Image(Star):
         yield self._plain_result(
             event,
             "Response2Image\n"
-            "• /r2i img <提示词> [--ref]\n    自动判断文生图/改图\n"
-            "• /r2i aiimg <提示词>\n    文生图\n"
-            "• /r2i aiedit <提示词> [--ref]\n    图生图\n"
-            "• /r2i selfie <提示词> [--ref]\n    自拍\n"
+            "• /r2i img <提示词> [--ref] [--size]\n    自动判断文生图/改图\n"
+            "• /r2i aiimg <提示词> [--size]\n    文生图\n"
+            "• /r2i aiedit <提示词> [--ref] [--size]\n    图生图\n"
+            "• /r2i selfie <提示词> [--ref] [--size]\n    自拍\n"
             "• /r2i selfie_ref set\n    发送或引用图片后执行\n"
             "• /r2i selfie_ref list\n    查看当前参考图\n"
             "• /r2i selfie_ref clear\n    清空命令保存的参考图"
@@ -164,29 +164,33 @@ class Response2Image(Star):
         event: AstrMessageEvent,
         prompt: str = "",
         ref: str = "",
+        size: str = "",
     ):
         """
         自动判断文生图或改图。
 
         Args:
             prompt(string): 图片生成提示词。
-            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            ref(string): 可选参考图；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            size(string): 可选图片尺寸，例如 1024x1024、1536x1024。
         """
-        return await self._run_llm_tool(event, prompt, mode="auto", ref=ref)
+        return await self._run_llm_tool(event, prompt, mode="auto", ref=ref, size=size)
 
     @filter.llm_tool(name="r2i_aiimg")
     async def llm_r2i_aiimg(
         self,
         event: AstrMessageEvent,
         prompt: str = "",
+        size: str = "",
     ):
         """
         文生图。
 
         Args:
             prompt(string): 图片生成提示词。
+            size(string): 可选图片尺寸，例如 1024x1024、1536x1024。
         """
-        return await self._run_llm_tool(event, prompt, mode="text")
+        return await self._run_llm_tool(event, prompt, mode="text", size=size)
 
     @filter.llm_tool(name="r2i_aiedit")
     async def llm_r2i_aiedit(
@@ -194,15 +198,17 @@ class Response2Image(Star):
         event: AstrMessageEvent,
         prompt: str = "",
         ref: str = "",
+        size: str = "",
     ):
         """
         改图。
 
         Args:
             prompt(string): 图片编辑提示词。
-            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            ref(string): 可选参考图；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            size(string): 可选图片尺寸，例如 1024x1024、1536x1024。
         """
-        return await self._run_llm_tool(event, prompt, mode="edit", ref=ref)
+        return await self._run_llm_tool(event, prompt, mode="edit", ref=ref, size=size)
 
     @filter.llm_tool(name="r2i_selfie")
     async def llm_r2i_selfie(
@@ -210,38 +216,64 @@ class Response2Image(Star):
         event: AstrMessageEvent,
         prompt: str = "",
         ref: str = "",
+        size: str = "",
     ):
         """
         自拍。
 
         Args:
             prompt(string): 自拍图提示词。
-            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            ref(string): 可选参考图；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
+            size(string): 可选图片尺寸，例如 1024x1024、1536x1024。
         """
-        return await self._run_llm_tool(event, prompt, mode="selfie", ref=ref)
+        return await self._run_llm_tool(event, prompt, mode="selfie", ref=ref, size=size)
 
     async def _generate(
-        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str, ref: Any = None
+        self,
+        event: AstrMessageEvent,
+        raw_prompt: str,
+        *,
+        mode: str,
+        ref: Any = None,
+        size: str = "",
     ):
         try:
-            prompt, ref_urls = self._resolve_generation_inputs(raw_prompt, ref)
+            prompt, ref_urls, image_size = self._resolve_generation_inputs(raw_prompt, ref, size)
         except ValueError as exc:
             text = str(exc)
             yield self._plain_result(event, text)
             return
 
-        result = await self._generate_result(event, prompt, ref_urls=ref_urls, mode=mode)
+        result = await self._generate_result(
+            event,
+            prompt,
+            ref_urls=ref_urls,
+            mode=mode,
+            image_size=image_size,
+        )
         yield result.response
 
     async def _run_llm_tool(
-        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str, ref: Any = None
+        self,
+        event: AstrMessageEvent,
+        raw_prompt: str,
+        *,
+        mode: str,
+        ref: Any = None,
+        size: str = "",
     ) -> str:
         try:
-            prompt, ref_urls = self._resolve_generation_inputs(raw_prompt, ref)
+            prompt, ref_urls, image_size = self._resolve_generation_inputs(raw_prompt, ref, size)
         except ValueError as exc:
             return self._with_prefix(str(exc))
 
-        result = await self._generate_result(event, prompt, ref_urls=ref_urls, mode=mode)
+        result = await self._generate_result(
+            event,
+            prompt,
+            ref_urls=ref_urls,
+            mode=mode,
+            image_size=image_size,
+        )
         if result.has_image:
             return json.dumps(result.image_data or {}, ensure_ascii=False)
         return result.llm_text
@@ -253,6 +285,7 @@ class Response2Image(Star):
         *,
         mode: str,
         ref_urls: list[str] | None = None,
+        image_size: str | None = None,
     ) -> GenerationResult:
         ref_urls = list(ref_urls or [])
 
@@ -320,7 +353,13 @@ class Response2Image(Star):
                     text = "参考图片不可用，请检查图片是否可访问。"
                     return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
 
-                payload = self._build_payload(prompt, model, ref_images, resolved_mode)
+                payload = self._build_payload(
+                    prompt,
+                    model,
+                    ref_images,
+                    resolved_mode,
+                    image_size=image_size,
+                )
                 async with client.stream("POST", url, headers=headers, json=payload) as response:
                     if response.status_code >= 400:
                         body = await response.aread()
@@ -433,17 +472,30 @@ class Response2Image(Star):
             return parts[1].strip() if len(parts) >= 2 else ""
         return fallback_prompt.strip()
 
-    def _resolve_generation_inputs(self, prompt: str, ref: Any = None) -> tuple[str, list[str]]:
+    def _resolve_generation_inputs(
+        self,
+        prompt: str,
+        ref: Any = None,
+        size: str = "",
+    ) -> tuple[str, list[str], str | None]:
         normalized_prompt = (prompt or "").strip()
         explicit_refs = self._parse_ref_argument(ref)
+        explicit_size = self._normalize_image_size(size)
         legacy_refs: list[str] = []
+        legacy_size: str | None = None
 
-        if "--ref" in normalized_prompt:
-            normalized_prompt, legacy_refs = self._parse_legacy_prompt_and_refs(normalized_prompt)
+        if "--ref" in normalized_prompt or "--size" in normalized_prompt:
+            normalized_prompt, legacy_refs, legacy_size = self._parse_legacy_prompt_and_refs(
+                normalized_prompt
+            )
 
         if not normalized_prompt:
             raise ValueError("请提供提示词。")
-        return normalized_prompt, self._merge_refs(explicit_refs, legacy_refs)
+        return (
+            normalized_prompt,
+            self._merge_refs(explicit_refs, legacy_refs),
+            explicit_size or legacy_size or self._get_default_image_size(),
+        )
 
     def _parse_ref_argument(self, ref: Any) -> list[str]:
         if ref is None:
@@ -457,13 +509,14 @@ class Response2Image(Star):
             return refs
         return self._split_ref_values(str(ref))
 
-    def _parse_legacy_prompt_and_refs(self, raw: str) -> tuple[str, list[str]]:
+    def _parse_legacy_prompt_and_refs(self, raw: str) -> tuple[str, list[str], str | None]:
         tokens = shlex.split(raw)
         if not tokens:
             raise ValueError("请提供提示词。")
 
         prompt_parts: list[str] = []
         ref_urls: list[str] = []
+        image_size: str | None = None
 
         i = 0
         while i < len(tokens):
@@ -474,16 +527,36 @@ class Response2Image(Star):
                 ref_urls.extend(self._split_ref_values(tokens[i + 1]))
                 i += 2
                 continue
+            if token == "--size":
+                if i + 1 >= len(tokens):
+                    raise ValueError("缺少 --size 参数。")
+                image_size = self._normalize_image_size(tokens[i + 1])
+                i += 2
+                continue
             prompt_parts.append(token)
             i += 1
 
         prompt = " ".join(prompt_parts).strip()
         if not prompt:
             raise ValueError("请提供提示词。")
-        return prompt, ref_urls
+        return prompt, ref_urls, image_size
 
     def _split_ref_values(self, raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    def _normalize_image_size(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        match = re.fullmatch(r"(\d{2,5})[xX](\d{2,5})", text)
+        if not match:
+            raise ValueError("图片尺寸格式无效，请使用类似 1024x1024 的宽x高格式。")
+        return f"{match.group(1)}x{match.group(2)}"
+
+    def _get_default_image_size(self) -> str | None:
+        return self._normalize_image_size(self._config_get("image_size", ""))
 
     def _get_timeout(self) -> httpx.Timeout:
         try:
@@ -578,28 +651,37 @@ class Response2Image(Star):
             normalized.append(self._build_data_url(mime, data))
         return normalized
 
-    def _build_payload(self, prompt: str, model: str, ref_images: list[str], mode: str) -> dict:
+    def _build_payload(
+        self,
+        prompt: str,
+        model: str,
+        ref_images: list[str],
+        mode: str,
+        *,
+        image_size: str | None = None,
+    ) -> dict:
         user_prompt = self._build_upstream_image_prompt(prompt, mode, bool(ref_images))
+        tool: dict[str, Any] = {"type": "image_generation", "output_format": "png"}
+        if image_size:
+            tool["size"] = image_size
+
         if ref_images:
             content = [{"type": "input_image", "image_url": url} for url in ref_images]
             content.append({"type": "input_text", "text": user_prompt})
             return {
                 "model": model,
-                "input": [
-                    {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
-                    {"role": "user", "content": content},
-                ],
-                "tools": [{"type": "image_generation", "output_format": "png"}],
+                "input": [{"role": "user", "content": content}],
+                "tools": [tool],
                 "stream": True,
             }
 
         return {
             "model": model,
             "input": [
-                {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            "tools": [{"type": "image_generation", "output_format": "png"}],
+                    {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            "tools": [tool],
             "stream": True,
         }
 

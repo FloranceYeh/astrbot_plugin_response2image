@@ -40,10 +40,10 @@
 - `r2i` 命令组
 - 子命令：
   - `help` 显示帮助信息
-  - `img <提示词> [--ref]` 自动模式（有图则改图，无图则文生图）
-  - `aiimg <提示词>` 文生图模式
-  - `aiedit <提示词> [--ref]` 改图模式
-  - `selfie <提示词> [--ref]` 自拍模式
+  - `img <提示词> [--ref] [--size]` 自动模式（有图则改图，无图则文生图）
+  - `aiimg <提示词> [--size]` 文生图模式
+  - `aiedit <提示词> [--ref] [--size]` 改图模式
+  - `selfie <提示词> [--ref] [--size]` 自拍模式
   - `selfie_ref set/list/clear` 自拍参考照管理
 
 示例：
@@ -51,7 +51,7 @@
 ```
 r2i img 一只在雨中奔跑的柴犬，皮克斯动画风格
 r2i aiimg 夜色霓虹城市
-r2i aiedit 把参考图改成水彩风格 --ref https://example.com/input.png
+r2i aiedit 把参考图改成水彩风格 --ref https://example.com/input.png --size 1024x1024
 r2i aiedit 把参考图加上蓝色天空 --ref C:\Images\input.jpg
 r2i selfie_ref 设置 C:\Images\input.jpg
 r2i selfie 日常自拍照，微笑，窗边自然光
@@ -59,9 +59,9 @@ r2i selfie 日常自拍照，微笑，窗边自然光
 
 ### LLM_Tool:
 
-- `r2i_aiimg <提示词>` 文生图模式
-- `r2i_aiedit <提示词> <参考图>` 改图模式
-- `r2i_selfie <提示词> [参考图]` 自拍模式
+- `r2i_aiimg <提示词> [size]` 文生图模式
+- `r2i_aiedit <提示词> <参考图> [size]` 改图模式
+- `r2i_selfie <提示词> [参考图] [size]` 自拍模式
 
 ## 说明
 
