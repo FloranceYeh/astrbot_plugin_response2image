@@ -84,10 +84,10 @@ class Response2Image(Star):
         )
 
     @r2i.command("img")
-    async def img(self, event: AstrMessageEvent, prompt: str = ""):
+    async def img(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
         """自动判断文生图或改图。"""
         raw_prompt = self._resolve_command_prompt(event, "img", prompt)
-        async for result in self._generate(event, raw_prompt, mode="auto"):
+        async for result in self._generate(event, raw_prompt, mode="auto", ref=ref):
             yield result
 
     @r2i.command("aiimg")
@@ -98,17 +98,17 @@ class Response2Image(Star):
             yield result
 
     @r2i.command("aiedit")
-    async def aiedit(self, event: AstrMessageEvent, prompt: str = ""):
+    async def aiedit(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
         """改图模式。"""
         raw_prompt = self._resolve_command_prompt(event, "aiedit", prompt)
-        async for result in self._generate(event, raw_prompt, mode="edit"):
+        async for result in self._generate(event, raw_prompt, mode="edit", ref=ref):
             yield result
 
     @r2i.command("selfie")
-    async def selfie(self, event: AstrMessageEvent, prompt: str = ""):
+    async def selfie(self, event: AstrMessageEvent, prompt: str = "", ref: str = ""):
         """自拍模式。"""
         raw_prompt = self._resolve_command_prompt(event, "selfie", prompt)
-        async for result in self._generate(event, raw_prompt, mode="selfie"):
+        async for result in self._generate(event, raw_prompt, mode="selfie", ref=ref):
             yield result
 
     @r2i.command("selfie_ref")
@@ -163,14 +163,16 @@ class Response2Image(Star):
         self,
         event: AstrMessageEvent,
         prompt: str = "",
+        ref: str = "",
     ):
         """
         自动判断文生图或改图。
 
         Args:
-            prompt(string): 图片生成提示词，支持使用 [--ref] 参数。
+            prompt(string): 图片生成提示词。
+            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
         """
-        return await self._run_llm_tool(event, prompt, mode="auto")
+        return await self._run_llm_tool(event, prompt, mode="auto", ref=ref)
 
     @filter.llm_tool(name="r2i_aiimg")
     async def llm_r2i_aiimg(
@@ -191,47 +193,68 @@ class Response2Image(Star):
         self,
         event: AstrMessageEvent,
         prompt: str = "",
+        ref: str = "",
     ):
         """
         改图。
 
         Args:
-            prompt(string): 图片编辑提示词，支持使用 [--ref] 参数。
+            prompt(string): 图片编辑提示词。
+            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
         """
-        return await self._run_llm_tool(event, prompt, mode="edit")
+        return await self._run_llm_tool(event, prompt, mode="edit", ref=ref)
 
     @filter.llm_tool(name="r2i_selfie")
     async def llm_r2i_selfie(
         self,
         event: AstrMessageEvent,
         prompt: str = "",
+        ref: str = "",
     ):
         """
         自拍。
 
         Args:
-            prompt(string): 自拍图提示词，支持使用 [--ref] 参数。
+            prompt(string): 自拍图提示词。
+            ref(string): 可选参考图，建议单独传参；可用逗号分隔多个参考图，兼容 URL / data:image / 本地文件路径。
         """
-        return await self._run_llm_tool(event, prompt, mode="selfie")
+        return await self._run_llm_tool(event, prompt, mode="selfie", ref=ref)
 
-    async def _generate(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str):
-        result = await self._generate_result(event, raw_prompt, mode=mode)
+    async def _generate(
+        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str, ref: Any = None
+    ):
+        try:
+            prompt, ref_urls = self._resolve_generation_inputs(raw_prompt, ref)
+        except ValueError as exc:
+            text = str(exc)
+            yield self._plain_result(event, text)
+            return
+
+        result = await self._generate_result(event, prompt, ref_urls=ref_urls, mode=mode)
         yield result.response
 
-    async def _run_llm_tool(self, event: AstrMessageEvent, raw_prompt: str, *, mode: str) -> str:
-        result = await self._generate_result(event, raw_prompt, mode=mode)
+    async def _run_llm_tool(
+        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str, ref: Any = None
+    ) -> str:
+        try:
+            prompt, ref_urls = self._resolve_generation_inputs(raw_prompt, ref)
+        except ValueError as exc:
+            return self._with_prefix(str(exc))
+
+        result = await self._generate_result(event, prompt, ref_urls=ref_urls, mode=mode)
         if result.has_image:
             return json.dumps(result.image_data or {}, ensure_ascii=False)
         return result.llm_text
 
     async def _generate_result(
-        self, event: AstrMessageEvent, raw_prompt: str, *, mode: str
+        self,
+        event: AstrMessageEvent,
+        prompt: str,
+        *,
+        mode: str,
+        ref_urls: list[str] | None = None,
     ) -> GenerationResult:
-        try:
-            prompt, ref_urls = self._parse_prompt(raw_prompt)
-        except ValueError as exc:
-            text = str(exc)
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+        ref_urls = list(ref_urls or [])
 
         base_url = str(self._config_get("base_url", "")).strip()
         api_key = str(self._config_get("api_key", "")).strip()
@@ -267,7 +290,7 @@ class Response2Image(Star):
             text = "文生图模式不使用参考图，请改用改图或自拍。"
             return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
         if mode == "edit" and not (ref_urls or event_refs):
-            text = "改图需要参考图片，请发送/引用图片或使用 --ref。"
+            text = "改图需要参考图片，请发送/引用图片，或通过参考图参数传入。"
             return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
         if mode == "selfie" and not (ref_urls or event_refs):
             text = "未设置自拍参考照，请先使用“自拍参考 设置”。"
@@ -410,7 +433,31 @@ class Response2Image(Star):
             return parts[1].strip() if len(parts) >= 2 else ""
         return fallback_prompt.strip()
 
-    def _parse_prompt(self, raw: str) -> tuple[str, list[str]]:
+    def _resolve_generation_inputs(self, prompt: str, ref: Any = None) -> tuple[str, list[str]]:
+        normalized_prompt = (prompt or "").strip()
+        explicit_refs = self._parse_ref_argument(ref)
+        legacy_refs: list[str] = []
+
+        if "--ref" in normalized_prompt:
+            normalized_prompt, legacy_refs = self._parse_legacy_prompt_and_refs(normalized_prompt)
+
+        if not normalized_prompt:
+            raise ValueError("请提供提示词。")
+        return normalized_prompt, self._merge_refs(explicit_refs, legacy_refs)
+
+    def _parse_ref_argument(self, ref: Any) -> list[str]:
+        if ref is None:
+            return []
+        if isinstance(ref, str):
+            return self._split_ref_values(ref)
+        if isinstance(ref, (list, tuple, set)):
+            refs: list[str] = []
+            for item in ref:
+                refs.extend(self._parse_ref_argument(item))
+            return refs
+        return self._split_ref_values(str(ref))
+
+    def _parse_legacy_prompt_and_refs(self, raw: str) -> tuple[str, list[str]]:
         tokens = shlex.split(raw)
         if not tokens:
             raise ValueError("请提供提示词。")
@@ -424,7 +471,7 @@ class Response2Image(Star):
             if token == "--ref":
                 if i + 1 >= len(tokens):
                     raise ValueError("缺少 --ref 参数。")
-                ref_urls.extend([u for u in tokens[i + 1].split(",") if u])
+                ref_urls.extend(self._split_ref_values(tokens[i + 1]))
                 i += 2
                 continue
             prompt_parts.append(token)
@@ -434,6 +481,9 @@ class Response2Image(Star):
         if not prompt:
             raise ValueError("请提供提示词。")
         return prompt, ref_urls
+
+    def _split_ref_values(self, raw: str) -> list[str]:
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
     def _get_timeout(self) -> httpx.Timeout:
         try:
