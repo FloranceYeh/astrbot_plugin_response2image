@@ -1,5 +1,6 @@
 ﻿import json
 from pathlib import Path
+import time
 from typing import Any
 
 import httpx
@@ -18,6 +19,7 @@ try:
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
         compose_command_fallback_prompt,
+        format_elapsed_seconds,
         get_reference_prompt_lines,
         merge_refs,
         mode_label,
@@ -39,6 +41,7 @@ except ImportError:
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
         compose_command_fallback_prompt,
+        format_elapsed_seconds,
         get_reference_prompt_lines,
         merge_refs,
         mode_label,
@@ -399,6 +402,7 @@ class Response2Image(Star):
             "Content-Type": "application/json",
         }
         image_error: str | None = None
+        started_at = time.perf_counter()
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -455,11 +459,13 @@ class Response2Image(Star):
                         file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
                         resolved_path = str(file_path.resolve())
                         size_str = self.media_service.format_size(len(image_bytes))
+                        elapsed_seconds = time.perf_counter() - started_at
+                        elapsed_text = format_elapsed_seconds(elapsed_seconds)
                         label = mode_label(resolved_mode)
-                        status_text = f"{label}完成（{size_str}）"
+                        status_text = f"{label}完成 ({size_str}, {elapsed_text})"
                         llm_lines = [status_text, f"图片路径：{resolved_path}"]
                         if self.config_reader.get_bool("send_generated_image_in_chat", False):
-                            llm_lines.append("结果已返回到当前聊天。")
+                            llm_lines.append("结果已自动返回到当前对话。")
                         llm_text = self._with_prefix("\n".join(llm_lines))
                         image_data = {
                             "type": "image",
@@ -468,6 +474,8 @@ class Response2Image(Star):
                             "size_text": size_str,
                             "mode": resolved_mode,
                             "status": status_text,
+                            "elapsed_seconds": round(elapsed_seconds, 3),
+                            "elapsed_text": elapsed_text,
                         }
                         chain = [
                             Comp.Plain(self._with_prefix(status_text)),
@@ -479,6 +487,7 @@ class Response2Image(Star):
                             has_image=True,
                             image_path=resolved_path,
                             image_data=image_data,
+                            elapsed_seconds=elapsed_seconds,
                         )
 
             if image_error:

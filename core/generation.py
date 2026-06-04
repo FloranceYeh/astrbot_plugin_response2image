@@ -38,6 +38,7 @@ class GenerationResult:
     has_image: bool = False
     image_path: str | None = None
     image_data: dict[str, Any] | None = None
+    elapsed_seconds: float | None = None
 
 
 @dataclass
@@ -45,6 +46,16 @@ class GenerationInputs:
     prompt: str
     ref_urls: list[str]
     image_size: str | None
+
+
+def format_elapsed_seconds(seconds: float) -> str:
+    if seconds < 10:
+        return f"{seconds:.2f} 秒"
+    if seconds < 60:
+        return f"{seconds:.1f} 秒"
+    minutes = int(seconds // 60)
+    remain = seconds - minutes * 60
+    return f"{minutes} 分 {remain:.1f} 秒"
 
 
 def resolve_command_prompt(
