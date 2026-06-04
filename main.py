@@ -48,14 +48,12 @@ class GenerationResult:
         self,
         response: Any,
         llm_text: str,
-        sent_text: str | None = None,
         has_image: bool = False,
         image_path: str | None = None,
         image_data: dict[str, Any] | None = None,
     ):
         self.response = response
         self.llm_text = llm_text
-        self.sent_text = sent_text
         self.has_image = has_image
         self.image_path = image_path
         self.image_data = image_data
@@ -313,7 +311,6 @@ class Response2Image(Star):
         if result.has_image:
             if self._should_send_generated_image_in_chat():
                 await event.send(result.response)
-                return result.sent_text or self._with_prefix("图片已发送到当前对话。")
             return result.llm_text
         return result.llm_text
 
@@ -438,7 +435,10 @@ class Response2Image(Star):
                         size_str = self._format_size(len(image_bytes))
                         label = self._mode_label(resolved_mode)
                         status_text = f"{label}完成（{size_str}）"
-                        llm_text = self._with_prefix(f"{status_text}\n图片路径：{resolved_path}")
+                        llm_lines = [status_text, f"图片路径：{resolved_path}"]
+                        if self._should_send_generated_image_in_chat():
+                            llm_lines.append("结果已返回到当前聊天。")
+                        llm_text = self._with_prefix("\n".join(llm_lines))
                         image_data = {
                             "type": "image",
                             "path": resolved_path,
@@ -454,7 +454,6 @@ class Response2Image(Star):
                         return GenerationResult(
                             event.chain_result(chain),
                             llm_text,
-                            sent_text=self._with_prefix("图片已发送到当前对话。"),
                             has_image=True,
                             image_path=resolved_path,
                             image_data=image_data,

@@ -32,7 +32,7 @@
 - `reference_prompt_edit`: 仅在改图模式或自动模式且包含参考图时使用，支持多行，每行非空行作为一条指令
 - `reference_prompt_selfie`: 仅在自拍模式使用，支持多行，每行非空行作为一条指令
 - `text_mode_use_white_reference_image`: 启用后，文生图模式会默默添加一张内置白图作为参考，以减少上游模型稀释
-- `send_generated_image_in_chat`: 启用后，LLM tool 生成成功会直接把图片发送到当前对话；关闭时仅返回状态文本/路径信息
+- `send_generated_image_in_chat`: 启用后，LLM tool 生成成功会直接把图片发送到当前对话，并继续向 LLM 返回生成状态、图片路径以及“结果已返回到当前聊天”的提示
 - `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）
 
 ## 使用
