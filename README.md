@@ -16,51 +16,17 @@
 - 支持限制本地生成图片的保留张数
 - 支持通过 WebUI 配置自拍参考图，也支持命令保存自拍参考图
 
-## 项目结构
-
-当前插件已按职责拆分为以下结构：
-
-```text
-astrbot_plugin_response2image/
-├── main.py
-├── core/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── generation.py
-│   ├── media.py
-│   ├── selfie_refs.py
-│   └── storage.py
-├── _conf_schema.json
-├── metadata.yaml
-├── requirements.txt
-├── README.md
-└── space.jpg
-```
-
-职责说明：
-
-- `main.py`：AstrBot 入口、命令注册、LLM tool 注册、生成主流程编排
-- `core/config.py`：插件配置读取与校验
-- `core/generation.py`：提示词解析、模式判断、payload 构建
-- `core/media.py`：图片引用提取、data URL 编解码、远程图片读取
-- `core/selfie_refs.py`：自拍参考图解析、保存、清理与附件 token 解析
-- `core/storage.py`：生成图片写入与历史图片清理
-
 ## 安装
 
 可通过以下任一方式安装：
 
 1. 在 AstrBot WebUI 中使用仓库地址安装：
 
-```text
-https://github.com/FloranceYeh/astrbot_plugin_response2image
-```
+`https://github.com/FloranceYeh/astrbot_plugin_response2image`
 
 2. 或将本仓库放入：
 
-```text
-AstrBot/data/plugins/astrbot_plugin_response2image
-```
+`AstrBot/data/plugins/astrbot_plugin_response2image`
 
 然后在 WebUI 插件管理中启用并完成配置。
 
