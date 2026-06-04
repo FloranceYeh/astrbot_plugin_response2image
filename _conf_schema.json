@@ -26,7 +26,7 @@
     "description": "Default image size",
     "type": "string",
     "hint": "Optional. Passed to the image_generation tool as size, for example: 1024x1024 or 1536x1024. Command-line --size and LLM tool size override this value.",
-    "default": "1024x1536"
+    "default": ""
   },
   "reference_prompt_edit": {
     "description": "Edit-mode reference-image prompt",

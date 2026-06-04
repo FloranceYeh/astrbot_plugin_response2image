@@ -661,7 +661,9 @@ class Response2Image(Star):
             key = "reference_prompt_edit"
             default = DEFAULT_REFERENCE_PROMPT_EDIT
         else:
-            raw = DEFAULT_REFERENCE_PROMPT_WHITE
+            text = DEFAULT_REFERENCE_PROMPT_WHITE
+            text = text.strip()
+            return [line.strip() for line in text.splitlines() if line.strip()]
 
         raw = self._config_get(key, default)
         text = raw if isinstance(raw, str) else default
