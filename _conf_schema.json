@@ -2,66 +2,67 @@
   "base_url": {
     "description": "Base URL",
     "type": "string",
-    "hint": "For example: https://api.openai.com",
+    "hint": "例如：https://api.openai.com，不需要包含 /v1",
     "default": ""
   },
   "api_key": {
     "description": "API Key",
     "type": "string",
-    "hint": "API key for the image generation service",
+    "hint": "用于图像生成服务的 API Key",
     "default": ""
   },
   "model": {
     "description": "Model ID",
     "type": "string",
-    "hint": "For example: gpt-5.3-codex (the model must be able to use the image_generation tool)",
+    "hint": "例如：gpt-5.4，模型必须支持 image_generation 工具",
     "default": ""
   },
   "timeout_seconds": {
-    "description": "Request timeout in seconds",
+    "description": "请求超时（秒）",
     "type": "int",
+    "hint": "用于控制对上游 Responses 接口的请求超时",
     "default": 200
   },
   "image_size": {
-    "description": "Default image size",
+    "description": "默认图片尺寸",
     "type": "string",
-    "hint": "Optional. Passed to the image_generation tool as size, for example: 1024x1024 or 1536x1024. Command-line --size and LLM tool size override this value.",
+    "hint": "可选，格式例如：1024x1024 或 1536x1024。命令行 --size 和 LLM tool 的 size 参数会覆盖此值。",
     "default": ""
   },
   "generated_image_keep_count": {
-    "description": "Generated image keep count",
+    "description": "本地生成图片保留张数",
     "type": "int",
-    "hint": "How many generated images to keep on disk. Use -1 to keep all images, or a positive integer to keep only the most recent N images.",
+    "hint": "设置为 -1 表示全部保留；设置为正整数时，仅保留最近的 N 张生成图片。",
     "default": -1
   },
   "reference_prompt_edit": {
-    "description": "Edit-mode reference-image prompt",
+    "description": "改图模式参考图补充指令",
     "type": "text",
-    "hint": "Used for aiedit or auto mode with reference images. Supports multiple lines; each non-empty line becomes one instruction.",
+    "hint": "用于 aiedit，或 auto 模式下带参考图时。支持多行，每个非空行都会作为一条补充指令。",
     "default": "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
   },
   "reference_prompt_selfie": {
-    "description": "Selfie-mode reference-image prompt",
+    "description": "自拍模式参考图补充指令",
     "type": "text",
-    "hint": "Used for selfie mode. Supports multiple lines; each non-empty line becomes one instruction.",
+    "hint": "用于 selfie 模式。支持多行，每个非空行都会作为一条补充指令。",
     "default": "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
   },
   "text_mode_use_white_reference_image": {
-    "description": "Use white reference image in text mode",
+    "description": "文生图模式附带白图",
     "type": "bool",
-    "hint": "When enabled, text-to-image mode silently adds one built-in white image as a reference to reduce upstream model dilution.",
+    "hint": "启用后，文生图模式会自动附带一张内置白图作为参考，以缓解上游模型稀释。",
     "default": false
   },
   "send_generated_image_in_chat": {
-    "description": "Send generated image in chat",
+    "description": "生成成功后直接发图到聊天",
     "type": "bool",
-    "hint": "When enabled, successful LLM tool image generation will send the image directly into the current conversation instead of only returning status text.",
-    "default": false
+    "hint": "启用后，LLM tool 生成成功时会把图片直接发送到当前对话，同时仍向 LLM 返回状态和图片路径。",
+    "default": true
   },
   "selfie_reference_images": {
-    "description": "Selfie reference images",
+    "description": "自拍参考图",
     "type": "file",
-    "hint": "Upload one or more reference images in WebUI. They will be merged with images saved by the selfie_ref set command.",
+    "hint": "可在 WebUI 上传一张或多张参考图。它们会与 `selfie_ref set` 命令保存的参考图合并使用。",
     "default": []
   }
 }
