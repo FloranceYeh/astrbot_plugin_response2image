@@ -462,7 +462,7 @@ class Response2Image(Star):
                         elapsed_seconds = time.perf_counter() - started_at
                         elapsed_text = format_elapsed_seconds(elapsed_seconds)
                         label = mode_label(resolved_mode)
-                        status_text = f"{label}完成 ({size_str}, {elapsed_text})"
+                        status_text = f"{label} {size_str} {elapsed_text}"
                         llm_lines = [status_text, f"图片路径：{resolved_path}"]
                         if self.config_reader.get_bool("send_generated_image_in_chat", False):
                             llm_lines.append("结果已自动返回到当前对话。")
