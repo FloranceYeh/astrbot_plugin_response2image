@@ -661,8 +661,7 @@ class Response2Image(Star):
             key = "reference_prompt_edit"
             default = DEFAULT_REFERENCE_PROMPT_EDIT
         else:
-            key = "reference_prompt_white"
-            default = DEFAULT_REFERENCE_PROMPT_WHITE
+            raw = DEFAULT_REFERENCE_PROMPT_WHITE
 
         raw = self._config_get(key, default)
         text = raw if isinstance(raw, str) else default
@@ -720,8 +719,12 @@ class Response2Image(Star):
             content.append({"type": "input_text", "text": user_prompt})
             return {
                 "model": model,
-                "input": [{"role": "user", "content": content}],
+                "input": [
+                        {"role": "system", "content": UPSTREAM_IMAGE_SYSTEM_PROMPT},
+                        {"role": "user", "content": content}
+                    ],
                 "tools": [tool],
+                "tool_choice": { "type": "image_generation" },
                 "stream": True,
             }
 
@@ -732,6 +735,7 @@ class Response2Image(Star):
                     {"role": "user", "content": user_prompt},
                 ],
             "tools": [tool],
+            "tool_choice": { "type": "image_generation" },
             "stream": True,
         }
 
