@@ -49,13 +49,14 @@ class GenerationInputs:
 
 
 def format_elapsed_seconds(seconds: float) -> str:
-    if seconds < 10:
-        return f"{seconds:.2f} 秒"
-    if seconds < 60:
-        return f"{seconds:.1f} 秒"
-    minutes = int(seconds // 60)
-    remain = seconds - minutes * 60
-    return f"{minutes} 分 {remain:.1f} 秒"
+    # if seconds < 10:
+    #     return f"{seconds:.2f} 秒"
+    # if seconds < 60:
+    #     return f"{seconds:.1f} 秒"
+    # minutes = int(seconds // 60)
+    # remain = seconds - minutes * 60
+    # return f"{minutes} 分 {remain:.1f} 秒"
+    return f"{seconds:.1f} s"
 
 
 def resolve_command_prompt(
