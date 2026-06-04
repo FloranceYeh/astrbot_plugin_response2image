@@ -28,6 +28,12 @@
     "hint": "Optional. Passed to the image_generation tool as size, for example: 1024x1024 or 1536x1024. Command-line --size and LLM tool size override this value.",
     "default": ""
   },
+  "generated_image_keep_count": {
+    "description": "Generated image keep count",
+    "type": "int",
+    "hint": "How many generated images to keep on disk. Use -1 to keep all images, or a positive integer to keep only the most recent N images.",
+    "default": -1
+  },
   "reference_prompt_edit": {
     "description": "Edit-mode reference-image prompt",
     "type": "text",

@@ -350,6 +350,11 @@ class Response2Image(Star):
         except ValueError as exc:
             text = str(exc)
             return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+        try:
+            self._get_generated_image_keep_count()
+        except ValueError as exc:
+            text = str(exc)
+            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
 
         event_refs = self._extract_refs_from_event(event) if mode in {"auto", "edit", "selfie"} else []
         if mode == "selfie" and not ref_urls and not event_refs:
@@ -621,6 +626,15 @@ class Response2Image(Star):
         if timeout_seconds <= 0:
             raise ValueError("插件配置 timeout_seconds 必须大于 0。")
         return httpx.Timeout(timeout_seconds)
+
+    def _get_generated_image_keep_count(self) -> int:
+        try:
+            keep_count = int(self._config_get("generated_image_keep_count", -1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("插件配置 generated_image_keep_count 无效。") from exc
+        if keep_count == -1 or keep_count > 0:
+            return keep_count
+        raise ValueError("插件配置 generated_image_keep_count 必须为 -1 或大于 0。")
 
     def _resolve_mode(self, mode: str, refs: list[str]) -> str:
         if mode == "auto":
@@ -1188,7 +1202,22 @@ class Response2Image(Star):
         name = datetime.now().strftime("resp2img_%Y%m%d_%H%M%S.png")
         path = out_dir / name
         path.write_bytes(image_bytes)
+        self._prune_generated_images(out_dir)
         return path
+
+    def _prune_generated_images(self, out_dir: Path) -> None:
+        keep_count = self._get_generated_image_keep_count()
+        if keep_count < 0:
+            return
+
+        files = [path for path in out_dir.glob("resp2img_*.png") if path.is_file()]
+        files.sort(key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)
+
+        for path in files[keep_count:]:
+            try:
+                path.unlink()
+            except OSError as exc:
+                logger.warning("删除旧生成图片失败: %s", exc)
 
     async def terminate(self):
         """插件被卸载时触发。"""
