@@ -32,6 +32,7 @@
 - `reference_prompt_edit`: 仅在改图模式或自动模式且包含参考图时使用，支持多行，每行非空行作为一条指令
 - `reference_prompt_selfie`: 仅在自拍模式使用，支持多行，每行非空行作为一条指令
 - `text_mode_use_white_reference_image`: 启用后，文生图模式会默默添加一张内置白图作为参考，以减少上游模型稀释
+- `send_generated_image_in_chat`: 启用后，LLM tool 生成成功会直接把图片发送到当前对话；关闭时仅返回状态文本/路径信息
 - `selfie_reference_images`: 自拍参考图（可在 WebUI 上传；会与 `selfie_ref set` 保存的参考图合并使用）
 
 ## 使用
@@ -59,9 +60,10 @@ r2i selfie 日常自拍照，微笑，窗边自然光
 
 ### LLM_Tool:
 
+- `r2i_img <提示词> [<参考图>] [size]` 自动模式（有图则改图，无图则文生图）
 - `r2i_aiimg <提示词> [size]` 文生图模式
 - `r2i_aiedit <提示词> <参考图> [size]` 改图模式
-- `r2i_selfie <提示词> [参考图] [size]` 自拍模式
+- `r2i_selfie <提示词> [参考图] [size]` 自拍模式（使用配置的参考图）
 
 ## 说明
 

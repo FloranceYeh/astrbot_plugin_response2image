@@ -46,6 +46,12 @@
     "hint": "When enabled, text-to-image mode silently adds one built-in white image as a reference to reduce upstream model dilution.",
     "default": false
   },
+  "send_generated_image_in_chat": {
+    "description": "Send generated image in chat",
+    "type": "bool",
+    "hint": "When enabled, successful LLM tool image generation will send the image directly into the current conversation instead of only returning status text.",
+    "default": false
+  },
   "selfie_reference_images": {
     "description": "Selfie reference images",
     "type": "file",

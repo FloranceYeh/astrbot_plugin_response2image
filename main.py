@@ -48,12 +48,14 @@ class GenerationResult:
         self,
         response: Any,
         llm_text: str,
+        sent_text: str | None = None,
         has_image: bool = False,
         image_path: str | None = None,
         image_data: dict[str, Any] | None = None,
     ):
         self.response = response
         self.llm_text = llm_text
+        self.sent_text = sent_text
         self.has_image = has_image
         self.image_path = image_path
         self.image_data = image_data
@@ -309,7 +311,10 @@ class Response2Image(Star):
             image_size=image_size,
         )
         if result.has_image:
-            return json.dumps(result.image_data or {}, ensure_ascii=False)
+            if self._should_send_generated_image_in_chat():
+                await event.send(result.response)
+                return result.sent_text or self._with_prefix("图片已发送到当前对话。")
+            return result.llm_text
         return result.llm_text
 
     async def _generate_result(
@@ -449,6 +454,7 @@ class Response2Image(Star):
                         return GenerationResult(
                             event.chain_result(chain),
                             llm_text,
+                            sent_text=self._with_prefix("图片已发送到当前对话。"),
                             has_image=True,
                             image_path=resolved_path,
                             image_data=image_data,
@@ -674,6 +680,9 @@ class Response2Image(Star):
 
     def _should_use_white_reference_in_text_mode(self) -> bool:
         return bool(self._config_get("text_mode_use_white_reference_image", False))
+
+    def _should_send_generated_image_in_chat(self) -> bool:
+        return bool(self._config_get("send_generated_image_in_chat", False))
 
     def _get_white_reference_image_path(self) -> Path:
         image_path = Path(__file__).resolve().parent / WHITE_REFERENCE_IMAGE_NAME
