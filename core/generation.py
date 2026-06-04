@@ -272,4 +272,60 @@ def _parse_legacy_prompt_and_refs(raw: str) -> tuple[str, list[str], str | None]
 
 
 def _split_ref_values(raw: str) -> list[str]:
+    raw = raw.strip()
+    if not raw:
+        return []
+
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            refs: list[str] = []
+            for item in parsed:
+                text = str(item).strip()
+                if text:
+                    refs.append(text)
+            return refs
+
+    if "\n" in raw:
+        return [item.strip() for item in raw.splitlines() if item.strip()]
+
+    smart_split = _split_ref_values_safely(raw)
+    if smart_split is not None:
+        return smart_split
+
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _split_ref_values_safely(raw: str) -> list[str] | None:
+    prefixes = ("http://", "https://", "/api/file/", "data:image/")
+    if not raw.startswith(prefixes):
+        return None
+
+    parts: list[str] = []
+    current: list[str] = []
+    i = 0
+    length = len(raw)
+
+    while i < length:
+        ch = raw[i]
+        if ch == ",":
+            j = i + 1
+            while j < length and raw[j].isspace():
+                j += 1
+            if j < length and raw.startswith(prefixes, j):
+                part = "".join(current).strip()
+                if part:
+                    parts.append(part)
+                current = []
+                i = j
+                continue
+        current.append(ch)
+        i += 1
+
+    tail = "".join(current).strip()
+    if tail:
+        parts.append(tail)
+    return parts

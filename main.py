@@ -62,7 +62,7 @@ class Response2Image(Star):
         self.data_dir: Path = StarTools.get_data_dir()
         self.config_reader = PluginConfigReader(config)
         self.image_store = GeneratedImageStore(self.data_dir)
-        self.media_service = ImageMediaService(Path(__file__).resolve().parent)
+        self.media_service = ImageMediaService(Path(__file__).resolve().parent, self.data_dir)
         self.selfie_ref_service = SelfieReferenceService(
             self.data_dir,
             self.config_reader,
