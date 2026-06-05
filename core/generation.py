@@ -1,3 +1,4 @@
+import json
 import re
 import shlex
 from dataclasses import dataclass
@@ -22,10 +23,10 @@ DEFAULT_REFERENCE_PROMPT_EDIT = (
     "只修改用户明确要求修改的内容；未提及的主体身份、数量、构图、比例、姿态、背景关系和关键细节尽量保持不变。"
 )
 DEFAULT_REFERENCE_PROMPT_SELFIE = (
-    "参考图片仅作为人物与外观依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
+    "参考图片仅作为人物与外貌依据；优先保持人物身份、脸部特征和整体一致性，根据用户要求生成自然的自拍照片效果。"
 )
 DEFAULT_REFERENCE_PROMPT_WHITE = (
-    "该参考图为纯白占位图，仅用于稳定生成流程与强化对文本指令的遵循，不提供任何可继承的主体、构图、风格或细节信息；请忽略其视觉内容，不要把白底、空白画面、留白构图或极简白色背景当作目标效果，仍以用户原始需求为唯一主要依据完成正常文生图"
+    "该参考图为纯白占位图，仅用于稳定生成流程与强化对文本指令的遵循，不提供任何可继承的主体、构图、风格或细节信息；请忽略其视觉内容，不要把白底、空白画面、留白构图或极简白色背景当作目标效果，仍以用户原始需求为唯一主要依据完成正常文生图。"
 )
 PLUGIN_RESPONSE_PREFIX = "[r2i]"
 WHITE_REFERENCE_IMAGE_NAME = "space.jpg"
@@ -46,17 +47,11 @@ class GenerationInputs:
     prompt: str
     ref_urls: list[str]
     image_size: str | None
+    preset_title: str | None = None
 
 
 def format_elapsed_seconds(seconds: float) -> str:
-    # if seconds < 10:
-    #     return f"{seconds:.2f} 秒"
-    # if seconds < 60:
-    #     return f"{seconds:.1f} 秒"
-    # minutes = int(seconds // 60)
-    # remain = seconds - minutes * 60
-    # return f"{minutes} 分 {remain:.1f} 秒"
-    return f"{seconds:.1f} s"
+    return f"{int(seconds)} s"
 
 
 def resolve_command_prompt(
@@ -79,12 +74,15 @@ def resolve_command_prompt(
 def compose_command_fallback_prompt(
     prompt: str = "",
     *,
+    preset: str = "",
     ref: str = "",
     size: str = "",
 ) -> str:
     parts: list[str] = []
     if prompt.strip():
         parts.append(prompt.strip())
+    if preset.strip():
+        parts.extend(["--preset", preset.strip()])
     if ref.strip():
         parts.extend(["--ref", ref.strip()])
     if size.strip():
@@ -96,24 +94,30 @@ def resolve_generation_inputs(
     prompt: str,
     ref: Any = None,
     size: str = "",
+    preset: str = "",
     *,
     default_image_size: str | None = None,
 ) -> GenerationInputs:
     normalized_prompt = (prompt or "").strip()
     explicit_refs = _parse_ref_argument(ref)
     explicit_size = normalize_image_size(size)
-    legacy_refs: list[str] = []
-    legacy_size: str | None = None
+    explicit_preset = normalize_preset_title(preset)
+    inline_refs: list[str] = []
+    inline_size: str | None = None
+    inline_preset: str | None = None
 
-    if "--ref" in normalized_prompt or "--size" in normalized_prompt:
-        normalized_prompt, legacy_refs, legacy_size = _parse_legacy_prompt_and_refs(normalized_prompt)
+    if "--preset" in normalized_prompt or "--ref" in normalized_prompt or "--size" in normalized_prompt:
+        normalized_prompt, inline_refs, inline_size, inline_preset = _parse_prompt_and_options(normalized_prompt)
 
-    if not normalized_prompt:
+    preset_title = explicit_preset or inline_preset
+    if not normalized_prompt and not preset_title:
         raise ValueError("请提供提示词。")
+
     return GenerationInputs(
         prompt=normalized_prompt,
-        ref_urls=merge_refs(explicit_refs, legacy_refs),
-        image_size=explicit_size or legacy_size or default_image_size,
+        ref_urls=merge_refs(explicit_refs, inline_refs),
+        image_size=explicit_size or inline_size or default_image_size,
+        preset_title=preset_title,
     )
 
 
@@ -125,8 +129,15 @@ def normalize_image_size(value: Any) -> str | None:
         return None
     match = re.fullmatch(r"(\d{2,5})[xX](\d{2,5})", text)
     if not match:
-        raise ValueError("图片尺寸格式无效，请使用类似 1024x1024 的宽x高格式。")
+        raise ValueError("图片尺寸格式无效，请使用类似 1024x1024 的 宽x高 格式。")
     return f"{match.group(1)}x{match.group(2)}"
+
+
+def normalize_preset_title(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def resolve_mode(mode: str, refs: list[str]) -> str:
@@ -239,7 +250,7 @@ def _parse_ref_argument(ref: Any) -> list[str]:
     return _split_ref_values(str(ref))
 
 
-def _parse_legacy_prompt_and_refs(raw: str) -> tuple[str, list[str], str | None]:
+def _parse_prompt_and_options(raw: str) -> tuple[str, list[str], str | None, str | None]:
     tokens = shlex.split(raw)
     if not tokens:
         raise ValueError("请提供提示词。")
@@ -247,10 +258,19 @@ def _parse_legacy_prompt_and_refs(raw: str) -> tuple[str, list[str], str | None]
     prompt_parts: list[str] = []
     ref_urls: list[str] = []
     image_size: str | None = None
+    preset_title: str | None = None
 
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        if token == "--preset":
+            if i + 1 >= len(tokens):
+                raise ValueError("缺少 --preset 参数。")
+            preset_title = normalize_preset_title(tokens[i + 1])
+            if not preset_title:
+                raise ValueError("预设标题不能为空。")
+            i += 2
+            continue
         if token == "--ref":
             if i + 1 >= len(tokens):
                 raise ValueError("缺少 --ref 参数。")
@@ -267,9 +287,9 @@ def _parse_legacy_prompt_and_refs(raw: str) -> tuple[str, list[str], str | None]
         i += 1
 
     prompt = " ".join(prompt_parts).strip()
-    if not prompt:
+    if not prompt and not preset_title:
         raise ValueError("请提供提示词。")
-    return prompt, ref_urls, image_size
+    return prompt, ref_urls, image_size, preset_title
 
 
 def _split_ref_values(raw: str) -> list[str]:
