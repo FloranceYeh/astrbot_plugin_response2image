@@ -73,6 +73,7 @@ class Response2Image(Star):
 
     @filter.command_group("r2i")
     def r2i(self):
+        """Response2Image 相关命令。"""
         pass
 
     @r2i.command("help")
@@ -566,7 +567,7 @@ class Response2Image(Star):
                         status_text = f"{label} {size_str} {elapsed_text}"
                         llm_lines = [status_text, f"图片路径：{resolved_path}"]
                         if self.config_reader.get_bool("send_generated_image_in_chat", False):
-                            llm_lines.append("结果已自动返回到当前对话。")
+                            llm_lines.append("已将生成的图片发送到当前对话。")
                         llm_text = self._with_prefix("\n".join(llm_lines))
                         image_data = {
                             "type": "image",

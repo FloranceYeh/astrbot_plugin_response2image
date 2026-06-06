@@ -3,7 +3,7 @@ display_name: Response2Image
 author: Florance
 version: 2.1.0
 desc: 基于 Responses API 的图像生成插件
-repo: https://github.com/Florance/astrbot_plugin_response2image
+repo: https://github.com/FloranceYeh/astrbot_plugin_response2image
 astrbot_version: ">=4.16"
 support_platforms:
   - aiocqhttp
