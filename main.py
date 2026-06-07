@@ -94,6 +94,34 @@ class Response2Image(Star):
             "• /r2i selfie_ref clear\n    清空命令保存的参考图"
         )
 
+    def _resolve_command_request(
+        self,
+        event: AstrMessageEvent,
+        command_name: str,
+        *,
+        prompt: str = "",
+        preset: str = "",
+        ref: str = "",
+        size: str = "",
+    ) -> tuple[str, str, str, str]:
+        message = (event.message_str or "").strip()
+        parts = message.split(maxsplit=2)
+        matched_raw_message = False
+
+        if len(parts) >= 2 and parts[0].lstrip("/").lower() == "r2i" and parts[1].lower() == command_name:
+            matched_raw_message = True
+        elif parts and parts[0].lstrip("/").lower() == command_name:
+            matched_raw_message = True
+
+        raw_prompt = resolve_command_prompt(
+            event.message_str,
+            command_name,
+            compose_command_fallback_prompt(prompt, preset=preset, ref=ref, size=size),
+        )
+        if matched_raw_message:
+            return raw_prompt, "", "", ""
+        return raw_prompt, preset, ref, size
+
     @r2i.command("img")
     async def img(
         self,
@@ -104,10 +132,13 @@ class Response2Image(Star):
         size: str = "",
     ):
         """自动判断文生图或改图。"""
-        raw_prompt = resolve_command_prompt(
-            event.message_str,
+        raw_prompt, preset, ref, size = self._resolve_command_request(
+            event,
             "img",
-            compose_command_fallback_prompt(prompt, preset=preset, ref=ref, size=size),
+            prompt=prompt,
+            preset=preset,
+            ref=ref,
+            size=size,
         )
         async for result in self._generate(event, raw_prompt, mode="auto", preset=preset, ref=ref, size=size):
             yield result
@@ -121,10 +152,12 @@ class Response2Image(Star):
         size: str = "",
     ):
         """文生图模式。"""
-        raw_prompt = resolve_command_prompt(
-            event.message_str,
+        raw_prompt, preset, _, size = self._resolve_command_request(
+            event,
             "aiimg",
-            compose_command_fallback_prompt(prompt, preset=preset, size=size),
+            prompt=prompt,
+            preset=preset,
+            size=size,
         )
         async for result in self._generate(event, raw_prompt, mode="text", preset=preset, size=size):
             yield result
@@ -139,10 +172,13 @@ class Response2Image(Star):
         size: str = "",
     ):
         """改图模式。"""
-        raw_prompt = resolve_command_prompt(
-            event.message_str,
+        raw_prompt, preset, ref, size = self._resolve_command_request(
+            event,
             "aiedit",
-            compose_command_fallback_prompt(prompt, preset=preset, ref=ref, size=size),
+            prompt=prompt,
+            preset=preset,
+            ref=ref,
+            size=size,
         )
         async for result in self._generate(event, raw_prompt, mode="edit", preset=preset, ref=ref, size=size):
             yield result
@@ -157,10 +193,13 @@ class Response2Image(Star):
         size: str = "",
     ):
         """自拍模式。"""
-        raw_prompt = resolve_command_prompt(
-            event.message_str,
+        raw_prompt, preset, ref, size = self._resolve_command_request(
+            event,
             "selfie",
-            compose_command_fallback_prompt(prompt, preset=preset, ref=ref, size=size),
+            prompt=prompt,
+            preset=preset,
+            ref=ref,
+            size=size,
         )
         async for result in self._generate(event, raw_prompt, mode="selfie", preset=preset, ref=ref, size=size):
             yield result
