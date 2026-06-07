@@ -62,7 +62,7 @@
 - `r2i selfie <提示词> [--preset 标题] [--ref 路径] [--size 宽x高]`
 - `r2i preset list`
 - `r2i preset show <标题>`
-- `r2i preset add <标题> <内容> [--ref 路径] [--size 宽x高]`
+- `r2i preset add <标题> <内容> [--ref 路径] [--size 宽x高] [--auto-size]`
 - `r2i preset del <标题>`
 - `r2i selfie_ref set`
 - `r2i selfie_ref list`
@@ -73,6 +73,7 @@
 ```text
 r2i img 一只在雨中奔跑的柴犬，电影感，动态抓拍
 r2i preset add 日常自拍 窗边自然光，微笑，真实肤色 --size 1024x1536
+r2i preset add 半身人像 保留构图和主体比例 --auto-size
 r2i img --preset 日常自拍
 r2i aiedit 保留人物姿势，改成海边日落 --preset 日常自拍 --ref https://example.com/input.png
 r2i aiimg 夜色霓虹城市，赛博朋克街景
@@ -97,6 +98,7 @@ r2i selfie 日常自拍，微笑，窗边自然光
 - 命令中的 `--size` 格式为 `宽x高`，例如 `1024x1024`，如果不指定则使用配置中的默认值；若配置中也没有默认值，则由上游模型自动决定尺寸
 - 命令中的 `--preset` 用于加载已保存预设；预设里的内容会作为基础提示词，当前命令里追加的提示词会拼接在后面，当前命令里的 `ref` / `size` 会优先覆盖预设
 - `r2i preset add` 支持把 `ref` 和 `size` 一起保存到预设里，后续调用时可直接复用
+- `r2i preset add --auto-size` 会读取第一张参考图的原始尺寸，并将宽高分别规范到最接近的 16 的倍数后保存；如果同时提供 `--size`，则仍以显式 `--size` 为准
 - LLM tool 更推荐通过独立 `ref` 参数传入参考图
 - 若消息中本身包含图片或引用图片，插件会自动尝试提取并作为参考图
 - 自拍模式优先使用命令或消息中的参考图；如果没有，则回退到 WebUI 上传和 `selfie_ref set` 保存的参考图

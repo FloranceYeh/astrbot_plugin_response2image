@@ -87,7 +87,7 @@ class Response2Image(Star):
             "• /r2i selfie <提示词> [--preset 标题] [--ref 路径] [--size 宽x高]\n    自拍\n"
             "• /r2i preset list\n    查看全部预设\n"
             "• /r2i preset show <标题>\n    查看某组预设详情\n"
-            "• /r2i preset add <标题> <内容> [--ref 路径] [--size 宽x高]\n    添加或覆盖预设\n"
+            "• /r2i preset add <标题> <内容> [--ref 路径] [--size 宽x高] [--auto-size]\n    添加或覆盖预设\n"
             "• /r2i preset del <标题>\n    删除某组预设\n"
             "• /r2i selfie_ref set\n    发送或引用图片后执行\n"
             "• /r2i selfie_ref list\n    查看当前参考图\n"
@@ -194,11 +194,26 @@ class Response2Image(Star):
 
         if action in {"add", "set", "save", "添加"}:
             try:
-                title, content, ref_urls, image_size = self._parse_preset_add_tokens(tokens[1:])
+                title, content, ref_urls, image_size, auto_size = self._parse_preset_add_tokens(tokens[1:])
                 ref_urls = merge_refs(
                     ref_urls,
                     self.media_service.extract_refs_from_event(event.message_obj, event.message_str),
                 )
+                auto_size_note = ""
+                if auto_size and not image_size:
+                    if not ref_urls:
+                        raise ValueError("启用 --auto-size 时需要至少一张参考图。")
+                    timeout = self.config_reader.get_timeout()
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        original_size, normalized_size = await self.media_service.infer_normalized_size_from_ref(
+                            ref_urls[0],
+                            client,
+                        )
+                    image_size = f"{normalized_size[0]}x{normalized_size[1]}"
+                    auto_size_note = (
+                        f" 已按首张参考图尺寸 {original_size[0]}x{original_size[1]} "
+                        f"自动规范为 {image_size}。"
+                    )
                 preset = self.preset_store.save_preset(
                     title,
                     content,
@@ -212,7 +227,7 @@ class Response2Image(Star):
             size_summary = preset.image_size or "默认尺寸"
             yield self._plain_result(
                 event,
-                f"已保存预设《{preset.title}》：{ref_summary}，{size_summary}。",
+                f"已保存预设《{preset.title}》：{ref_summary}，{size_summary}。{auto_size_note}".strip(),
             )
             return
 
@@ -641,7 +656,7 @@ class Response2Image(Star):
     def _parse_preset_add_tokens(
         self,
         tokens: list[str],
-    ) -> tuple[str, str, list[str], str | None]:
+    ) -> tuple[str, str, list[str], str | None, bool]:
         if not tokens:
             raise ValueError(self._preset_usage())
 
@@ -652,6 +667,7 @@ class Response2Image(Star):
         content_parts: list[str] = []
         ref_urls: list[str] = []
         image_size: str | None = None
+        auto_size = False
 
         i = 1
         while i < len(tokens):
@@ -668,20 +684,24 @@ class Response2Image(Star):
                 image_size = normalize_image_size(tokens[i + 1])
                 i += 2
                 continue
+            if token == "--auto-size":
+                auto_size = True
+                i += 1
+                continue
             content_parts.append(token)
             i += 1
 
         content = " ".join(content_parts).strip()
         if not content:
             raise ValueError("预设内容不能为空。")
-        return title, content, ref_urls, image_size
+        return title, content, ref_urls, image_size, auto_size
 
     def _preset_usage(self) -> str:
         return (
             "用法：\n"
             "/r2i preset list\n"
             "/r2i preset show <标题>\n"
-            "/r2i preset add <标题> <内容> [--ref ...] [--size 1024x1024]\n"
+            "/r2i preset add <标题> <内容> [--ref ...] [--size 1024x1024] [--auto-size]\n"
             "/r2i preset del <标题>\n"
             "调用示例：/r2i img --preset 日常自拍"
         )
