@@ -195,6 +195,10 @@ class Response2Image(Star):
         if action in {"add", "set", "save", "添加"}:
             try:
                 title, content, ref_urls, image_size = self._parse_preset_add_tokens(tokens[1:])
+                ref_urls = merge_refs(
+                    ref_urls,
+                    self.media_service.extract_refs_from_event(event.message_obj, event.message_str),
+                )
                 preset = self.preset_store.save_preset(
                     title,
                     content,
