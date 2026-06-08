@@ -1,5 +1,5 @@
-﻿import json
-import asyncio
+﻿import asyncio
+import json
 from pathlib import Path
 import shlex
 import time
@@ -530,6 +530,11 @@ class Response2Image(Star):
         except ValueError as exc:
             text = str(exc)
             return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+        try:
+            retry_count = self.config_reader.get_generation_retry_count()
+        except ValueError as exc:
+            text = str(exc)
+            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
 
         event_refs = (
             self.media_service.extract_refs_from_event(event.message_obj, event.message_str)
@@ -583,24 +588,30 @@ class Response2Image(Star):
                     image_size=image_size,
                     reference_lines=self._get_reference_prompt_lines(resolved_mode),
                 )
-                retry_delays = (1.0, 2.0)
-                for attempt_index in range(len(retry_delays) + 1):
+                for attempt_index in range(retry_count + 1):
                     try:
                         async with client.stream("POST", url, headers=headers, json=payload) as response:
                             if response.status_code >= 400:
                                 body = await response.aread()
                                 detail = self._summarize_error_body(body)
                                 if (
-                                    attempt_index < len(retry_delays)
+                                    attempt_index < retry_count
                                     and self._should_retry_generation_http_error(response.status_code, detail)
                                 ):
-                                    delay_seconds = retry_delays[attempt_index]
+                                    delay_seconds = self._get_retry_delay_seconds(attempt_index)
                                     logger.warning(
                                         "生成请求返回可重试错误，%.1f 秒后重试（第 %s 次）: HTTP %s %s",
                                         delay_seconds,
                                         attempt_index + 2,
                                         response.status_code,
                                         detail[:200],
+                                    )
+                                    await self._send_retry_notice(
+                                        event,
+                                        attempt_index=attempt_index,
+                                        retry_count=retry_count,
+                                        delay_seconds=delay_seconds,
+                                        reason=f"HTTP {response.status_code} {detail}",
                                     )
                                     await asyncio.sleep(delay_seconds)
                                     continue
@@ -668,13 +679,20 @@ class Response2Image(Star):
                                     elapsed_seconds=elapsed_seconds,
                                 )
                     except httpx.TransportError as exc:
-                        if attempt_index < len(retry_delays):
-                            delay_seconds = retry_delays[attempt_index]
+                        if attempt_index < retry_count:
+                            delay_seconds = self._get_retry_delay_seconds(attempt_index)
                             logger.warning(
                                 "生成请求网络异常，%.1f 秒后重试（第 %s 次）: %s",
                                 delay_seconds,
                                 attempt_index + 2,
                                 exc,
+                            )
+                            await self._send_retry_notice(
+                                event,
+                                attempt_index=attempt_index,
+                                retry_count=retry_count,
+                                delay_seconds=delay_seconds,
+                                reason=f"网络异常：{exc}",
                             )
                             await asyncio.sleep(delay_seconds)
                             continue
@@ -725,6 +743,27 @@ class Response2Image(Star):
             return True
         normalized = "".join(detail.split())
         return "查询api使用" in normalized and "没有本次的记录" in normalized
+
+    def _get_retry_delay_seconds(self, attempt_index: int) -> float:
+        return float(min(attempt_index + 1, 5))
+
+    async def _send_retry_notice(
+        self,
+        event: AstrMessageEvent,
+        *,
+        attempt_index: int,
+        retry_count: int,
+        delay_seconds: float,
+        reason: str,
+    ) -> None:
+        notice = (
+            f"请求异常，准备在 {delay_seconds:.0f} 秒后重试"
+            f"（第 {attempt_index + 1}/{retry_count} 次）：{reason}"
+        )
+        try:
+            await event.send(self._plain_result(event, notice))
+        except Exception as exc:
+            logger.warning("发送重试提示失败: %s", exc)
 
     def _resolve_inputs_with_preset(
         self,

@@ -23,6 +23,12 @@
     "hint": "用于控制对上游 Responses 接口的请求超时",
     "default": 200
   },
+  "generation_retry_count": {
+    "description": "生成失败重试次数",
+    "type": "int",
+    "hint": "首次请求失败后最多自动重试的次数。设置为 0 表示不重试；每次重试前会把提示发到当前对话。",
+    "default": 2
+  },
   "image_size": {
     "description": "默认图片尺寸",
     "type": "string",

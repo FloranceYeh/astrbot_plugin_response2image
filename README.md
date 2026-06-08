@@ -39,6 +39,7 @@
 - `api_key`：图像生成服务的 API Key
 - `model`：模型 ID，必须支持 `image_generation`
 - `timeout_seconds`：请求超时时间，单位秒
+- `generation_retry_count`：首次请求失败后最多自动重试的次数，`0` 表示不重试
 - `image_size`：默认图片尺寸，例如 `1024x1024`
 - `generated_image_keep_count`：本地生成图片保留张数，`-1` 表示全部保留
 - `reference_prompt_edit`：改图模式参考图补充指令，支持多行
@@ -105,6 +106,7 @@ r2i selfie 日常自拍，微笑，窗边自然光
 - 生成图片默认保存到 `data/plugin_data/astrbot_plugin_response2image/generated`
 - 文件名格式为 `resp2img_%Y%m%d_%H%M%S.png`
 - 当 `send_generated_image_in_chat` 启用时，LLM tool 除返回状态文本外，也会把图片直接发送到当前聊天
+- 发生可重试错误时，插件会先在当前对话输出重试提示，再按配置的次数自动重试
 
 ## 鸣谢
 

@@ -38,6 +38,15 @@ class PluginConfigReader:
             raise ValueError("插件配置 timeout_seconds 必须大于 0。")
         return httpx.Timeout(timeout_seconds)
 
+    def get_generation_retry_count(self) -> int:
+        try:
+            retry_count = int(self.get("generation_retry_count", 2))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("插件配置 generation_retry_count 无效。") from exc
+        if retry_count >= 0:
+            return retry_count
+        raise ValueError("插件配置 generation_retry_count 必须大于或等于 0。")
+
     def get_generated_image_keep_count(self) -> int:
         try:
             keep_count = int(self.get("generated_image_keep_count", -1))
