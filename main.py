@@ -489,6 +489,34 @@ class Response2Image(Star):
             return result.llm_text
         return result.llm_text
 
+    def _text_result(
+        self,
+        event: AstrMessageEvent,
+        text: str,
+        *,
+        log_level: str | None = None,
+    ) -> GenerationResult:
+        if log_level:
+            self._log(log_level, text)
+        return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+
+    async def _log_and_send(
+        self,
+        event: AstrMessageEvent,
+        text: str,
+        *,
+        log_level: str = "info",
+    ) -> None:
+        self._log(log_level, text)
+        try:
+            await event.send(self._plain_result(event, text))
+        except Exception as exc:
+            self._log("warning", f"发送消息失败: {exc}")
+
+    def _log(self, level: str, message: str) -> None:
+        log_fn = getattr(logger, level, logger.info)
+        log_fn(message)
+
     async def _generate_result(
         self,
         event: AstrMessageEvent,
@@ -506,35 +534,35 @@ class Response2Image(Star):
 
         if not base_url:
             text = "请在插件配置中设置 base_url。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         if not api_key:
             text = "请在插件配置中设置 api_key。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         if not model:
             text = "请在插件配置中设置 model。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
 
         try:
             normalized_base = normalize_base_url(base_url)
         except ValueError as exc:
             text = str(exc)
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
 
         try:
             timeout = self.config_reader.get_timeout()
         except ValueError as exc:
             text = str(exc)
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         try:
             generated_image_keep_count = self.config_reader.get_generated_image_keep_count()
         except ValueError as exc:
             text = str(exc)
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         try:
             retry_count = self.config_reader.get_generation_retry_count()
         except ValueError as exc:
             text = str(exc)
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
 
         event_refs = (
             self.media_service.extract_refs_from_event(event.message_obj, event.message_str)
@@ -546,13 +574,13 @@ class Response2Image(Star):
 
         if mode == "text" and (ref_urls or event_refs):
             text = "文生图模式不使用参考图，请改用改图或自拍。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         if mode == "edit" and not (ref_urls or event_refs):
             text = "改图需要参考图片，请发送/引用图片，或通过参考图参数传入。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         if mode == "selfie" and not (ref_urls or event_refs):
             text = "未设置自拍参考照，请先使用“自拍参考 设置”。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
 
         merged_refs = merge_refs(ref_urls, event_refs)
         resolved_mode = resolve_mode(mode, merged_refs)
@@ -576,10 +604,10 @@ class Response2Image(Star):
                     ref_images = await self.media_service.normalize_ref_images(request_refs, client)
                 except ValueError as exc:
                     text = str(exc)
-                    return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+                    return self._text_result(event, text)
                 if resolved_mode in {"edit", "selfie"} and not ref_images:
                     text = "参考图片不可用，请检查图片是否可访问。"
-                    return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+                    return self._text_result(event, text)
 
                 payload = build_payload(
                     prompt,
@@ -599,24 +627,19 @@ class Response2Image(Star):
                                     and self._should_retry_generation_http_error(response.status_code, detail)
                                 ):
                                     delay_seconds = self._get_retry_delay_seconds(attempt_index)
-                                    logger.warning(
-                                        "生成请求返回可重试错误，%.1f 秒后重试（第 %s 次）: HTTP %s %s",
-                                        delay_seconds,
-                                        attempt_index + 2,
-                                        response.status_code,
-                                        detail[:200],
-                                    )
-                                    await self._send_retry_notice(
+                                    await self._log_and_send(
                                         event,
-                                        attempt_index=attempt_index,
-                                        retry_count=retry_count,
-                                        delay_seconds=delay_seconds,
-                                        reason=f"HTTP {response.status_code} {detail}",
+                                        (
+                                            f"请求异常，准备在 {delay_seconds:.0f} 秒后重试"
+                                            f"（第 {attempt_index + 1}/{retry_count} 次）："
+                                            f"HTTP {response.status_code} {detail}"
+                                        ),
+                                        log_level="warning",
                                     )
                                     await asyncio.sleep(delay_seconds)
                                     continue
                                 text = f"请求失败：HTTP {response.status_code} {detail}"
-                                return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+                                return self._text_result(event, text)
 
                             async for line in response.aiter_lines():
                                 line = line.strip()
@@ -632,7 +655,7 @@ class Response2Image(Star):
                                 try:
                                     data = json.loads(data_str)
                                 except json.JSONDecodeError:
-                                    logger.warning("无法解析数据块: %s", data_str[:200])
+                                    self._log("warning", f"无法解析数据块: {data_str[:200]}")
                                     continue
 
                                 image_ref = self.media_service.extract_image_ref(data)
@@ -642,7 +665,7 @@ class Response2Image(Star):
                                     image_bytes = await self.media_service.read_image_bytes(image_ref, client)
                                 except ValueError as exc:
                                     image_error = str(exc)
-                                    logger.warning("图片解析失败: %s", exc)
+                                    self._log("warning", f"图片解析失败: {exc}")
                                     continue
 
                                 file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
@@ -681,31 +704,25 @@ class Response2Image(Star):
                     except httpx.TransportError as exc:
                         if attempt_index < retry_count:
                             delay_seconds = self._get_retry_delay_seconds(attempt_index)
-                            logger.warning(
-                                "生成请求网络异常，%.1f 秒后重试（第 %s 次）: %s",
-                                delay_seconds,
-                                attempt_index + 2,
-                                exc,
-                            )
-                            await self._send_retry_notice(
+                            await self._log_and_send(
                                 event,
-                                attempt_index=attempt_index,
-                                retry_count=retry_count,
-                                delay_seconds=delay_seconds,
-                                reason=f"网络异常：{exc}",
+                                (
+                                    f"请求异常，准备在 {delay_seconds:.0f} 秒后重试"
+                                    f"（第 {attempt_index + 1}/{retry_count} 次）：网络异常：{exc}"
+                                ),
+                                log_level="warning",
                             )
                             await asyncio.sleep(delay_seconds)
                             continue
                         raise
 
             if image_error:
-                return GenerationResult(self._plain_result(event, image_error), self._with_prefix(image_error))
+                return self._text_result(event, image_error)
             text = "未收到图片结果，请检查模型是否支持 image_generation。"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text)
         except httpx.HTTPError as exc:
-            logger.error(f"请求失败: {exc}")
             text = f"请求失败：{exc}"
-            return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+            return self._text_result(event, text, log_level="error")
 
     def _summarize_error_body(self, body: bytes) -> str:
         text = body.decode("utf-8", "ignore").strip()
@@ -746,24 +763,6 @@ class Response2Image(Star):
 
     def _get_retry_delay_seconds(self, attempt_index: int) -> float:
         return float(min(attempt_index + 1, 5))
-
-    async def _send_retry_notice(
-        self,
-        event: AstrMessageEvent,
-        *,
-        attempt_index: int,
-        retry_count: int,
-        delay_seconds: float,
-        reason: str,
-    ) -> None:
-        notice = (
-            f"请求异常，准备在 {delay_seconds:.0f} 秒后重试"
-            f"（第 {attempt_index + 1}/{retry_count} 次）：{reason}"
-        )
-        try:
-            await event.send(self._plain_result(event, notice))
-        except Exception as exc:
-            logger.warning("发送重试提示失败: %s", exc)
 
     def _resolve_inputs_with_preset(
         self,
