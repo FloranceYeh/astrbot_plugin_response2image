@@ -1,4 +1,5 @@
 ﻿import json
+import asyncio
 from pathlib import Path
 import shlex
 import time
@@ -582,73 +583,102 @@ class Response2Image(Star):
                     image_size=image_size,
                     reference_lines=self._get_reference_prompt_lines(resolved_mode),
                 )
-                async with client.stream("POST", url, headers=headers, json=payload) as response:
-                    if response.status_code >= 400:
-                        body = await response.aread()
-                        detail = body.decode("utf-8", "ignore")[:500]
-                        text = f"请求失败：HTTP {response.status_code} {detail}"
-                        return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+                retry_delays = (1.0, 2.0)
+                for attempt_index in range(len(retry_delays) + 1):
+                    try:
+                        async with client.stream("POST", url, headers=headers, json=payload) as response:
+                            if response.status_code >= 400:
+                                body = await response.aread()
+                                detail = self._summarize_error_body(body)
+                                if (
+                                    attempt_index < len(retry_delays)
+                                    and self._should_retry_generation_http_error(response.status_code, detail)
+                                ):
+                                    delay_seconds = retry_delays[attempt_index]
+                                    logger.warning(
+                                        "生成请求返回可重试错误，%.1f 秒后重试（第 %s 次）: HTTP %s %s",
+                                        delay_seconds,
+                                        attempt_index + 2,
+                                        response.status_code,
+                                        detail[:200],
+                                    )
+                                    await asyncio.sleep(delay_seconds)
+                                    continue
+                                text = f"请求失败：HTTP {response.status_code} {detail}"
+                                return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
 
-                    async for line in response.aiter_lines():
-                        line = line.strip()
-                        if not line:
-                            continue
-                        if line.startswith("event: "):
-                            continue
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if not data_str or data_str == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            logger.warning("无法解析数据块: %s", data_str[:200])
-                            continue
+                            async for line in response.aiter_lines():
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                if line.startswith("event: "):
+                                    continue
+                                if not line.startswith("data: "):
+                                    continue
+                                data_str = line[6:]
+                                if not data_str or data_str == "[DONE]":
+                                    break
+                                try:
+                                    data = json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    logger.warning("无法解析数据块: %s", data_str[:200])
+                                    continue
 
-                        image_ref = self.media_service.extract_image_ref(data)
-                        if not image_ref:
-                            continue
-                        try:
-                            image_bytes = await self.media_service.read_image_bytes(image_ref, client)
-                        except ValueError as exc:
-                            image_error = str(exc)
-                            logger.warning("图片解析失败: %s", exc)
-                            continue
+                                image_ref = self.media_service.extract_image_ref(data)
+                                if not image_ref:
+                                    continue
+                                try:
+                                    image_bytes = await self.media_service.read_image_bytes(image_ref, client)
+                                except ValueError as exc:
+                                    image_error = str(exc)
+                                    logger.warning("图片解析失败: %s", exc)
+                                    continue
 
-                        file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
-                        resolved_path = str(file_path.resolve())
-                        size_str = self.media_service.format_size(len(image_bytes))
-                        elapsed_seconds = time.perf_counter() - started_at
-                        elapsed_text = format_elapsed_seconds(elapsed_seconds)
-                        label = mode_label(resolved_mode)
-                        status_text = f"{label} {size_str} {elapsed_text}"
-                        llm_lines = [status_text, f"图片路径：{resolved_path}"]
-                        if self.config_reader.get_bool("send_generated_image_in_chat", False):
-                            llm_lines.append("已将生成的图片发送到当前对话。")
-                        llm_text = self._with_prefix("\n".join(llm_lines))
-                        image_data = {
-                            "type": "image",
-                            "path": resolved_path,
-                            "size_bytes": len(image_bytes),
-                            "size_text": size_str,
-                            "mode": resolved_mode,
-                            "status": status_text,
-                            "elapsed_seconds": round(elapsed_seconds, 3),
-                            "elapsed_text": elapsed_text,
-                        }
-                        chain = [
-                            Comp.Plain(self._with_prefix(status_text)),
-                            Comp.Image.fromFileSystem(str(file_path)),
-                        ]
-                        return GenerationResult(
-                            event.chain_result(chain),
-                            llm_text,
-                            has_image=True,
-                            image_path=resolved_path,
-                            image_data=image_data,
-                            elapsed_seconds=elapsed_seconds,
-                        )
+                                file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
+                                resolved_path = str(file_path.resolve())
+                                size_str = self.media_service.format_size(len(image_bytes))
+                                elapsed_seconds = time.perf_counter() - started_at
+                                elapsed_text = format_elapsed_seconds(elapsed_seconds)
+                                label = mode_label(resolved_mode)
+                                status_text = f"{label} {size_str} {elapsed_text}"
+                                llm_lines = [status_text, f"图片路径：{resolved_path}"]
+                                if self.config_reader.get_bool("send_generated_image_in_chat", False):
+                                    llm_lines.append("已将生成的图片发送到当前对话。")
+                                llm_text = self._with_prefix("\n".join(llm_lines))
+                                image_data = {
+                                    "type": "image",
+                                    "path": resolved_path,
+                                    "size_bytes": len(image_bytes),
+                                    "size_text": size_str,
+                                    "mode": resolved_mode,
+                                    "status": status_text,
+                                    "elapsed_seconds": round(elapsed_seconds, 3),
+                                    "elapsed_text": elapsed_text,
+                                }
+                                chain = [
+                                    Comp.Plain(self._with_prefix(status_text)),
+                                    Comp.Image.fromFileSystem(str(file_path)),
+                                ]
+                                return GenerationResult(
+                                    event.chain_result(chain),
+                                    llm_text,
+                                    has_image=True,
+                                    image_path=resolved_path,
+                                    image_data=image_data,
+                                    elapsed_seconds=elapsed_seconds,
+                                )
+                    except httpx.TransportError as exc:
+                        if attempt_index < len(retry_delays):
+                            delay_seconds = retry_delays[attempt_index]
+                            logger.warning(
+                                "生成请求网络异常，%.1f 秒后重试（第 %s 次）: %s",
+                                delay_seconds,
+                                attempt_index + 2,
+                                exc,
+                            )
+                            await asyncio.sleep(delay_seconds)
+                            continue
+                        raise
 
             if image_error:
                 return GenerationResult(self._plain_result(event, image_error), self._with_prefix(image_error))
@@ -658,6 +688,43 @@ class Response2Image(Star):
             logger.error(f"请求失败: {exc}")
             text = f"请求失败：{exc}"
             return GenerationResult(self._plain_result(event, text), self._with_prefix(text))
+
+    def _summarize_error_body(self, body: bytes) -> str:
+        text = body.decode("utf-8", "ignore").strip()
+        if not text:
+            return "空响应"
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return text[:500]
+
+        message = self._extract_error_message(payload)
+        if message:
+            return message[:500]
+        return text[:500]
+
+    def _extract_error_message(self, payload: Any) -> str | None:
+        if isinstance(payload, str):
+            text = payload.strip()
+            return text or None
+        if isinstance(payload, dict):
+            for key in ("error", "message", "detail"):
+                value = payload.get(key)
+                message = self._extract_error_message(value)
+                if message:
+                    return message
+        if isinstance(payload, list):
+            for item in payload:
+                message = self._extract_error_message(item)
+                if message:
+                    return message
+        return None
+
+    def _should_retry_generation_http_error(self, status_code: int, detail: str) -> bool:
+        if status_code in {408, 409, 425, 429} or status_code >= 500:
+            return True
+        normalized = "".join(detail.split())
+        return "查询api使用" in normalized and "没有本次的记录" in normalized
 
     def _resolve_inputs_with_preset(
         self,
