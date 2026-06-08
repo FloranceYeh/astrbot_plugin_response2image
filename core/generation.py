@@ -28,7 +28,7 @@ DEFAULT_REFERENCE_PROMPT_SELFIE = (
 DEFAULT_REFERENCE_PROMPT_WHITE = (
     "该参考图为纯白占位图，仅用于稳定生成流程与强化对文本指令的遵循，不提供任何可继承的主体、构图、风格或细节信息；请忽略其视觉内容，不要把白底、空白画面、留白构图或极简白色背景当作目标效果，仍以用户原始需求为唯一主要依据完成正常文生图。"
 )
-PLUGIN_RESPONSE_PREFIX = "[r2i]"
+
 WHITE_REFERENCE_IMAGE_NAME = "space.jpg"
 
 
