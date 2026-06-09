@@ -27,7 +27,7 @@
     "description": "生成失败重试次数",
     "type": "int",
     "hint": "首次请求失败后最多自动重试的次数。设置为 0 表示不重试；每次重试前会把提示发到当前对话。",
-    "default": 2
+    "default": 0
   },
   "image_size": {
     "description": "默认图片尺寸",

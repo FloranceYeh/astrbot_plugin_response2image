@@ -1,18 +1,23 @@
 import base64
 import binascii
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
+try:
+    from .path_resolver import LocalImageRefResolver
+except ImportError:
+    from core.path_resolver import LocalImageRefResolver
+
 
 class ImageMediaService:
     def __init__(self, plugin_dir: Path, data_dir: Path | None = None):
         self.plugin_dir = plugin_dir
         self.data_dir = data_dir.resolve() if data_dir else None
+        self.local_ref_resolver = LocalImageRefResolver(self.data_dir)
 
     def get_white_reference_image_path(self, image_name: str) -> Path:
         image_path = self.plugin_dir / image_name
@@ -178,7 +183,7 @@ class ImageMediaService:
         refs: list[str] = []
         self._collect_image_refs(message_obj, refs)
         refs.extend(self._extract_image_refs_from_text(message_str))
-        return refs
+        return list(dict.fromkeys(refs))
 
     def looks_like_base64(self, value: str) -> bool:
         if value.startswith(("iVBOR", "/9j/")):
@@ -284,109 +289,16 @@ class ImageMediaService:
         return ".png"
 
     def resolve_local_image_ref(self, value: str) -> str | None:
-        normalized = value.strip()
-        if not normalized or self.data_dir is None:
-            return None
-
-        parsed = urlparse(normalized)
-        if parsed.scheme in {"http", "https"}:
-            if parsed.path.startswith("/api/file/"):
-                token = parsed.path.rsplit("/", 1)[-1].strip()
-                if token:
-                    return self.resolve_attachment_token(token)
-            return None
-
-        if normalized.startswith("/api/file/"):
-            token = normalized.rsplit("/", 1)[-1].strip()
-            if token:
-                return self.resolve_attachment_token(token)
-            return None
-
-        direct_path = Path(normalized)
-        if direct_path.is_file():
-            return str(direct_path)
-
-        for candidate in self.candidate_local_paths(normalized):
-            if candidate.is_file():
-                return str(candidate)
-
-        return self.resolve_attachment_token(normalized)
+        return self.local_ref_resolver.resolve_local_image_ref(value)
 
     def candidate_local_paths(self, value: str) -> list[Path]:
-        raw_path = Path(value)
-        if raw_path.is_absolute():
-            return [raw_path]
-
-        candidates: list[Path] = []
-        for base in self.candidate_data_roots():
-            candidates.append(base / value)
-            candidates.append(base / "attachments" / value)
-            candidates.append(base / "temp" / value)
-
-        candidates.append(Path.cwd() / value)
-        return candidates
+        return self.local_ref_resolver.candidate_local_paths(value)
 
     def candidate_data_roots(self) -> list[Path]:
-        if self.data_dir is None:
-            return []
-
-        roots: list[Path] = [self.data_dir]
-        for parent in self.data_dir.parents:
-            roots.append(parent)
-            if parent.name == "data":
-                break
-
-        deduped: list[Path] = []
-        seen: set[str] = set()
-        for path in roots:
-            key = str(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(path)
-        return deduped
+        return self.local_ref_resolver.candidate_data_roots()
 
     def resolve_attachment_token(self, token: str) -> str | None:
-        cleaned = token.strip().strip("/")
-        if not cleaned:
-            return None
-
-        db_path: Path | None = None
-        for root in self.candidate_data_roots():
-            candidate = root / "data_v4.db"
-            if candidate.is_file():
-                db_path = candidate
-                break
-
-        if db_path is None:
-            return None
-
-        try:
-            with sqlite3.connect(db_path) as conn:
-                row = conn.execute(
-                    "SELECT path FROM attachments WHERE attachment_id = ? LIMIT 1",
-                    (cleaned,),
-                ).fetchone()
-        except sqlite3.Error:
-            return None
-
-        if not row or not row[0]:
-            return None
-
-        stored_path = str(row[0]).strip()
-        if not stored_path:
-            return None
-
-        path = Path(stored_path)
-        if path.is_file():
-            return str(path)
-
-        for root in self.candidate_data_roots():
-            candidate = root / stored_path
-            if candidate.is_file():
-                return str(candidate)
-
-        return None
+        return self.local_ref_resolver.resolve_attachment_token(token)
 
     def _collect_image_refs(self, obj: Any, refs: list[str]) -> None:
         if obj is None:

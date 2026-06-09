@@ -5,7 +5,7 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
-from .generation import GenerationResult
+from .generation import GeneratedImageData, GenerationResult
 
 PLUGIN_RESPONSE_PREFIX = "[r2i]"
 
@@ -45,7 +45,7 @@ class Sender:
         llm_lines = [status_text, f"图片路径：{resolved_path}"]
         if send_generated_image_in_chat:
             llm_lines.append("已将生成的图片发送到当前对话。")
-        image_data = {
+        image_data: GeneratedImageData = {
             "type": "image",
             "path": resolved_path,
             "size_bytes": size_bytes,

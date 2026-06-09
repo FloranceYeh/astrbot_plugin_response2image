@@ -2,7 +2,7 @@ import json
 import re
 import shlex
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 UPSTREAM_IMAGE_RETRY_INSTRUCTION = (
     "重要指示：如果 image_generation 未产出图片，请在不改变核心意图的前提下改写提示词并再次调用，"
@@ -32,17 +32,28 @@ DEFAULT_REFERENCE_PROMPT_WHITE = (
 WHITE_REFERENCE_IMAGE_NAME = "space.jpg"
 
 
-@dataclass
+class GeneratedImageData(TypedDict):
+    type: Literal["image"]
+    path: str
+    size_bytes: int
+    size_text: str
+    mode: str
+    status: str
+    elapsed_seconds: float
+    elapsed_text: str
+
+
+@dataclass(slots=True)
 class GenerationResult:
     response: Any
     llm_text: str
     has_image: bool = False
     image_path: str | None = None
-    image_data: dict[str, Any] | None = None
+    image_data: GeneratedImageData | None = None
     elapsed_seconds: float | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class GenerationInputs:
     prompt: str
     ref_urls: list[str]
@@ -227,14 +238,7 @@ def build_payload(
 
 
 def merge_refs(first: list[str], second: list[str]) -> list[str]:
-    seen: set[str] = set()
-    merged: list[str] = []
-    for item in first + second:
-        if item in seen:
-            continue
-        seen.add(item)
-        merged.append(item)
-    return merged
+    return list(dict.fromkeys(first + second))
 
 
 def _parse_ref_argument(ref: Any) -> list[str]:
@@ -243,10 +247,7 @@ def _parse_ref_argument(ref: Any) -> list[str]:
     if isinstance(ref, str):
         return _split_ref_values(ref)
     if isinstance(ref, (list, tuple, set)):
-        refs: list[str] = []
-        for item in ref:
-            refs.extend(_parse_ref_argument(item))
-        return refs
+        return [value for item in ref for value in _parse_ref_argument(item)]
     return _split_ref_values(str(ref))
 
 
@@ -303,12 +304,7 @@ def _split_ref_values(raw: str) -> list[str]:
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, list):
-            refs: list[str] = []
-            for item in parsed:
-                text = str(item).strip()
-                if text:
-                    refs.append(text)
-            return refs
+            return [text for item in parsed if (text := str(item).strip())]
 
     if "\n" in raw:
         return [item.strip() for item in raw.splitlines() if item.strip()]

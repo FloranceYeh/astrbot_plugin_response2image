@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 from astrbot.api import logger
 
 
-@dataclass
+@dataclass(slots=True)
 class PromptPreset:
     title: str
     content: str
@@ -149,9 +150,9 @@ class PromptPresetStore:
         )
         temp_path.replace(self.path)
 
-    def _sort_presets(self, presets) -> list[PromptPreset]:
+    def _sort_presets(self, presets: Iterable[PromptPreset]) -> list[PromptPreset]:
         return sorted(
-            list(presets),
+            presets,
             key=lambda item: (item.updated_at, item.title),
             reverse=True,
         )

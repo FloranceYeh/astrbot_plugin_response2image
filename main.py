@@ -1,5 +1,4 @@
-﻿import asyncio
-import json
+﻿import json
 from pathlib import Path
 import shlex
 import time
@@ -15,6 +14,7 @@ try:
     from .core.generation import (
         DEFAULT_REFERENCE_PROMPT_EDIT,
         DEFAULT_REFERENCE_PROMPT_SELFIE,
+        GenerationInputs,
         GenerationResult,
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
@@ -29,6 +29,7 @@ try:
         resolve_mode,
     )
     from .core.media import ImageMediaService
+    from .core.retry import RetryContext, RetrySignalError, run_with_retries
     from .core.selfie_refs import SelfieReferenceService
     from .core.sender import Sender
     from .core.storage import GeneratedImageStore, PromptPresetStore
@@ -37,6 +38,7 @@ except ImportError:
     from core.generation import (
         DEFAULT_REFERENCE_PROMPT_EDIT,
         DEFAULT_REFERENCE_PROMPT_SELFIE,
+        GenerationInputs,
         GenerationResult,
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
@@ -51,6 +53,7 @@ except ImportError:
         resolve_mode,
     )
     from core.media import ImageMediaService
+    from core.retry import RetryContext, RetrySignalError, run_with_retries
     from core.selfie_refs import SelfieReferenceService
     from core.sender import Sender
     from core.storage import GeneratedImageStore, PromptPresetStore
@@ -588,85 +591,31 @@ class Response2Image(Star):
                     image_size=image_size,
                     reference_lines=self._get_reference_prompt_lines(resolved_mode),
                 )
-                for attempt_index in range(retry_count + 1):
-                    try:
-                        async with client.stream("POST", url, headers=headers, json=payload) as response:
-                            if response.status_code >= 400:
-                                body = await response.aread()
-                                detail = f"HTTP {response.status_code} {self._summarize_error_body(body)}"
-                                if await self._retry_generation_failure(
-                                    event,
-                                    attempt_index,
-                                    retry_count,
-                                    detail,
-                                    retryable=self._should_retry_generation_http_error(
-                                        response.status_code,
-                                        detail,
-                                    ),
-                                ):
-                                    continue
-                                text = f"请求失败：{detail}"
-                                return self.sender.text_result(event, text)
-
-                            async for line in response.aiter_lines():
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if line.startswith("event: "):
-                                    continue
-                                if not line.startswith("data: "):
-                                    continue
-                                data_str = line[6:]
-                                if not data_str or data_str == "[DONE]":
-                                    break
-                                try:
-                                    data = json.loads(data_str)
-                                except json.JSONDecodeError:
-                                    self.sender.log("warning", f"无法解析数据块: {data_str[:200]}")
-                                    continue
-
-                                image_ref = self.media_service.extract_image_ref(data)
-                                if not image_ref:
-                                    continue
-                                try:
-                                    image_bytes = await self.media_service.read_image_bytes(image_ref, client)
-                                except ValueError as exc:
-                                    image_error = str(exc)
-                                    self.sender.log("warning", f"图片解析失败: {exc}")
-                                    continue
-
-                                file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
-                                size_str = self.media_service.format_size(len(image_bytes))
-                                elapsed_seconds = time.perf_counter() - started_at
-                                elapsed_text = format_elapsed_seconds(elapsed_seconds)
-                                label = mode_label(resolved_mode)
-                                status_text = f"{label} {size_str} {elapsed_text}"
-                                return self.sender.image_result(
-                                    event,
-                                    file_path=file_path,
-                                    size_bytes=len(image_bytes),
-                                    size_text=size_str,
-                                    mode=resolved_mode,
-                                    status_text=status_text,
-                                    elapsed_seconds=elapsed_seconds,
-                                    elapsed_text=elapsed_text,
-                                    send_generated_image_in_chat=self.config_reader.get_bool(
-                                        "send_generated_image_in_chat",
-                                        False,
-                                    ),
-                                )
-                    except httpx.TransportError as exc:
-                        detail = f"网络异常：{exc}"
-                        if await self._retry_generation_failure(
+                try:
+                    result = await run_with_retries(
+                        self._build_generation_attempt(
+                            client,
                             event,
-                            attempt_index,
-                            retry_count,
-                            detail,
-                            retryable=True,
-                        ):
-                            continue
-                        text = f"请求失败：{detail}"
-                        return self.sender.text_result(event, text, log_level="error")
+                            url,
+                            headers,
+                            payload,
+                            generated_image_keep_count,
+                            resolved_mode,
+                            started_at,
+                            image_error_state={"value": image_error},
+                        ),
+                        retry_count=retry_count,
+                        get_delay_seconds=self._get_retry_delay_seconds,
+                        on_retry=lambda context: self._notify_generation_retry(event, context),
+                        classify_exception=self._classify_generation_retry_exception,
+                    )
+                except RetrySignalError as exc:
+                    text = f"请求失败：{exc.detail}"
+                    return self.sender.text_result(event, text, log_level="error")
+
+                image_error = result["image_error"]
+                if result["response"] is not None:
+                    return result["response"]
 
             if image_error:
                 return self.sender.text_result(event, image_error)
@@ -676,28 +625,108 @@ class Response2Image(Star):
             text = f"请求失败：{exc}"
             return self.sender.text_result(event, text, log_level="error")
 
-    async def _retry_generation_failure(
+    def _build_generation_attempt(
+        self,
+        client: httpx.AsyncClient,
+        event: AstrMessageEvent,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        generated_image_keep_count: int,
+        resolved_mode: str,
+        started_at: float,
+        *,
+        image_error_state: dict[str, str | None],
+    ):
+        async def attempt() -> dict[str, Any]:
+            async with client.stream("POST", url, headers=headers, json=payload) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    detail = f"HTTP {response.status_code} {self._summarize_error_body(body)}"
+                    raise RetrySignalError(
+                        detail,
+                        retryable=self._should_retry_generation_http_error(
+                            response.status_code,
+                            detail,
+                        ),
+                    )
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("event: "):
+                        continue
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if not data_str or data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        self.sender.log("warning", f"无法解析数据块: {data_str[:200]}")
+                        continue
+
+                    image_ref = self.media_service.extract_image_ref(data)
+                    if not image_ref:
+                        continue
+                    try:
+                        image_bytes = await self.media_service.read_image_bytes(image_ref, client)
+                    except ValueError as exc:
+                        image_error_state["value"] = str(exc)
+                        self.sender.log("warning", f"图片解析失败: {exc}")
+                        continue
+
+                    file_path = self.image_store.write_image(image_bytes, generated_image_keep_count)
+                    size_str = self.media_service.format_size(len(image_bytes))
+                    elapsed_seconds = time.perf_counter() - started_at
+                    elapsed_text = format_elapsed_seconds(elapsed_seconds)
+                    label = mode_label(resolved_mode)
+                    status_text = f"{label} {size_str} {elapsed_text}"
+                    return {
+                        "response": self.sender.image_result(
+                            event,
+                            file_path=file_path,
+                            size_bytes=len(image_bytes),
+                            size_text=size_str,
+                            mode=resolved_mode,
+                            status_text=status_text,
+                            elapsed_seconds=elapsed_seconds,
+                            elapsed_text=elapsed_text,
+                            send_generated_image_in_chat=self.config_reader.get_bool(
+                                "send_generated_image_in_chat",
+                                False,
+                            ),
+                        ),
+                        "image_error": image_error_state["value"],
+                    }
+
+            return {
+                "response": None,
+                "image_error": image_error_state["value"],
+            }
+
+        return attempt
+
+    def _classify_generation_retry_exception(self, exc: Exception) -> tuple[str, bool] | None:
+        if isinstance(exc, httpx.TransportError):
+            return (f"网络异常：{exc}", True)
+        return None
+
+    async def _notify_generation_retry(
         self,
         event: AstrMessageEvent,
-        attempt_index: int,
-        retry_count: int,
-        detail: str,
-        *,
-        retryable: bool,
-    ) -> bool:
-        if not retryable or attempt_index >= retry_count:
-            return False
-        delay_seconds = self._get_retry_delay_seconds(attempt_index)
+        context: RetryContext,
+    ) -> None:
         await self.sender.log_and_send(
             event,
             (
-                f"请求异常，准备在 {delay_seconds:.0f} 秒后重试"
-                f"（第 {attempt_index + 1}/{retry_count} 次）：{detail}"
+                f"请求异常，准备在 {context.delay_seconds:.0f} 秒后重试"
+                f"（第 {context.attempt_index + 1}/{context.retry_count} 次）：{context.detail}"
             ),
             log_level="warning",
         )
-        await asyncio.sleep(delay_seconds)
-        return True
 
     def _summarize_error_body(self, body: bytes) -> str:
         text = body.decode("utf-8", "ignore").strip()
@@ -746,7 +775,7 @@ class Response2Image(Star):
         ref: Any = None,
         size: str = "",
         preset: str = "",
-    ):
+    ) -> GenerationInputs:
         default_image_size = normalize_image_size(self.config_reader.get_str("image_size", ""))
         inputs = resolve_generation_inputs(
             raw_prompt,
@@ -868,7 +897,7 @@ class Response2Image(Star):
                 mode,
                 self.config_reader.get_text("reference_prompt_selfie", DEFAULT_REFERENCE_PROMPT_SELFIE),
             )
-        elif mode == "edit":
+        if mode == "edit":
             return get_reference_prompt_lines(
                 mode,
                 self.config_reader.get_text("reference_prompt_edit", DEFAULT_REFERENCE_PROMPT_EDIT),
