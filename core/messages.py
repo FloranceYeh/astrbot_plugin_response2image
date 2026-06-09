@@ -181,3 +181,91 @@ def generation_request_failed(detail: str) -> str:
 
 def no_generated_image_result() -> str:
     return "未收到图片结果，请检查模型是否支持 image_generation。"
+
+
+def white_reference_image_missing(path: str) -> str:
+    return f"白图参考文件不存在: {path}"
+
+
+def ref_image_not_found(ref: str) -> str:
+    return f"参考图片不存在: {ref}"
+
+
+def returned_image_base64_invalid() -> str:
+    return "返回的图片 base64 无法解码。"
+
+
+def returned_image_request_failed(status_code: int) -> str:
+    return f"返回的图片 URL 请求失败：HTTP {status_code}"
+
+
+def unknown_image_format() -> str:
+    return "未识别的图片格式。"
+
+
+def ref_image_empty() -> str:
+    return "参考图片为空。"
+
+
+def ref_image_request_failed(status_code: int, path_hint: str) -> str:
+    return f"参考图片请求失败：HTTP {status_code} ({path_hint})"
+
+
+def ref_image_content_type_invalid() -> str:
+    return "参考图片 Content-Type 不是图片。"
+
+
+def image_file_too_small() -> str:
+    return "图片文件过小，无法解析尺寸。"
+
+
+def png_header_incomplete() -> str:
+    return "PNG 图片头不完整，无法解析尺寸。"
+
+
+def unsupported_ref_image_dimensions() -> str:
+    return "暂不支持解析该参考图片的尺寸。"
+
+
+def invalid_dimension_divisor() -> str:
+    return "尺寸规范除数必须大于 0。"
+
+
+def returned_data_url_invalid() -> str:
+    return "返回的 data URL 无效。"
+
+
+def returned_data_url_format_invalid() -> str:
+    return "返回的 data URL 格式不正确。"
+
+
+def returned_data_url_missing_mime() -> str:
+    return "返回的 data URL 缺少 MIME。"
+
+
+def returned_data_url_decode_failed() -> str:
+    return "返回的 data URL 无法解码。"
+
+
+def jpeg_dimensions_invalid() -> str:
+    return "JPEG 图片头无有效尺寸信息。"
+
+
+def webp_header_incomplete() -> str:
+    return "WEBP 图片头不完整，无法解析尺寸。"
+
+
+def webp_vp8_dimensions_invalid() -> str:
+    return "WEBP VP8 图片头无有效尺寸信息。"
+
+
+def webp_vp8l_dimensions_invalid() -> str:
+    return "WEBP VP8L 图片头无有效尺寸信息。"
+
+
+def unsupported_webp_dimensions() -> str:
+    return "暂不支持解析该 WEBP 参考图片的尺寸。"
+
+
+def image_dimensions_invalid() -> str:
+    return "图片尺寸无效。"
