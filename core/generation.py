@@ -2,7 +2,14 @@ import json
 import re
 import shlex
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypeAlias, TypedDict
+
+import httpx
+
+try:
+    from .messages import image_size_invalid, missing_option_argument, preset_title_empty, prompt_required
+except ImportError:
+    from core.messages import image_size_invalid, missing_option_argument, preset_title_empty, prompt_required
 
 UPSTREAM_IMAGE_RETRY_INSTRUCTION = (
     "重要指示：如果 image_generation 未产出图片，请在不改变核心意图的前提下改写提示词并再次调用，"
@@ -31,6 +38,10 @@ DEFAULT_REFERENCE_PROMPT_WHITE = (
 
 WHITE_REFERENCE_IMAGE_NAME = "space.jpg"
 
+GenerationMode: TypeAlias = Literal["auto", "text", "edit", "selfie"]
+RefInput: TypeAlias = str | list[str] | tuple[str, ...] | set[str] | None
+ImageSizeText: TypeAlias = Annotated[str | None, "Normalized WIDTHxHEIGHT image size"]
+
 
 class GeneratedImageData(TypedDict):
     type: Literal["image"]
@@ -57,8 +68,40 @@ class GenerationResult:
 class GenerationInputs:
     prompt: str
     ref_urls: list[str]
-    image_size: str | None
+    image_size: ImageSizeText
     preset_title: str | None = None
+
+
+@dataclass(slots=True)
+class GenerationTask:
+    prompt: str
+    mode: GenerationMode
+    ref_urls: list[str]
+    image_size: ImageSizeText
+
+
+@dataclass(slots=True)
+class GenerationRuntimeConfig:
+    base_url: str
+    api_key: str
+    model: str
+    timeout: httpx.Timeout
+    generated_image_keep_count: int
+    retry_count: int
+    send_generated_image_in_chat: bool
+    use_white_reference_image: bool
+
+
+@dataclass(slots=True)
+class PreparedGenerationRequest:
+    resolved_mode: Literal["text", "edit", "selfie"]
+    request_refs: list[str]
+
+
+@dataclass(slots=True)
+class GenerationAttemptOutcome:
+    response: GenerationResult | None
+    image_error: str | None = None
 
 
 def format_elapsed_seconds(seconds: float) -> str:
@@ -103,11 +146,11 @@ def compose_command_fallback_prompt(
 
 def resolve_generation_inputs(
     prompt: str,
-    ref: Any = None,
+    ref: RefInput = None,
     size: str = "",
     preset: str = "",
     *,
-    default_image_size: str | None = None,
+    default_image_size: ImageSizeText = None,
 ) -> GenerationInputs:
     normalized_prompt = (prompt or "").strip()
     explicit_refs = _parse_ref_argument(ref)
@@ -122,7 +165,7 @@ def resolve_generation_inputs(
 
     preset_title = explicit_preset or inline_preset
     if not normalized_prompt and not preset_title:
-        raise ValueError("请提供提示词。")
+        raise ValueError(prompt_required())
 
     return GenerationInputs(
         prompt=normalized_prompt,
@@ -132,7 +175,7 @@ def resolve_generation_inputs(
     )
 
 
-def normalize_image_size(value: Any) -> str | None:
+def normalize_image_size(value: Any) -> ImageSizeText:
     if value is None:
         return None
     text = str(value).strip()
@@ -140,7 +183,7 @@ def normalize_image_size(value: Any) -> str | None:
         return None
     match = re.fullmatch(r"(\d{2,5})[xX](\d{2,5})", text)
     if not match:
-        raise ValueError("图片尺寸格式无效，请使用类似 1024x1024 的 宽x高 格式。")
+        raise ValueError(image_size_invalid())
     return f"{match.group(1)}x{match.group(2)}"
 
 
@@ -151,13 +194,13 @@ def normalize_preset_title(value: Any) -> str | None:
     return text or None
 
 
-def resolve_mode(mode: str, refs: list[str]) -> str:
+def resolve_mode(mode: GenerationMode, refs: list[str]) -> Literal["text", "edit", "selfie"]:
     if mode == "auto":
         return "edit" if refs else "text"
     return mode
 
 
-def mode_label(mode: str) -> str:
+def mode_label(mode: GenerationMode) -> str:
     if mode == "edit":
         return "改图"
     if mode == "selfie":
@@ -254,7 +297,7 @@ def _parse_ref_argument(ref: Any) -> list[str]:
 def _parse_prompt_and_options(raw: str) -> tuple[str, list[str], str | None, str | None]:
     tokens = shlex.split(raw)
     if not tokens:
-        raise ValueError("请提供提示词。")
+        raise ValueError(prompt_required())
 
     prompt_parts: list[str] = []
     ref_urls: list[str] = []
@@ -266,21 +309,21 @@ def _parse_prompt_and_options(raw: str) -> tuple[str, list[str], str | None, str
         token = tokens[i]
         if token == "--preset":
             if i + 1 >= len(tokens):
-                raise ValueError("缺少 --preset 参数。")
+                raise ValueError(missing_option_argument("--preset"))
             preset_title = normalize_preset_title(tokens[i + 1])
             if not preset_title:
-                raise ValueError("预设标题不能为空。")
+                raise ValueError(preset_title_empty())
             i += 2
             continue
         if token == "--ref":
             if i + 1 >= len(tokens):
-                raise ValueError("缺少 --ref 参数。")
+                raise ValueError(missing_option_argument("--ref"))
             ref_urls.extend(_split_ref_values(tokens[i + 1]))
             i += 2
             continue
         if token == "--size":
             if i + 1 >= len(tokens):
-                raise ValueError("缺少 --size 参数。")
+                raise ValueError(missing_option_argument("--size"))
             image_size = normalize_image_size(tokens[i + 1])
             i += 2
             continue
@@ -289,7 +332,7 @@ def _parse_prompt_and_options(raw: str) -> tuple[str, list[str], str | None, str
 
     prompt = " ".join(prompt_parts).strip()
     if not prompt and not preset_title:
-        raise ValueError("请提供提示词。")
+        raise ValueError(prompt_required())
     return prompt, ref_urls, image_size, preset_title
 
 

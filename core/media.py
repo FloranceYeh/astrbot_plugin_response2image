@@ -96,7 +96,8 @@ class ImageMediaService:
             except binascii.Error as exc:
                 raise ValueError("返回的图片 base64 无法解码。") from exc
         if kind == "data_url":
-            return self.decode_data_url(value)
+            _, data = self.parse_data_url(value)
+            return data
         if kind == "url":
             resp = await client.get(value, follow_redirects=True)
             if resp.status_code >= 400:
@@ -109,7 +110,8 @@ class ImageMediaService:
         if not ref:
             raise ValueError("参考图片为空。")
         if self.looks_like_data_url(ref):
-            return self.decode_data_url(ref)
+            _, data = self.parse_data_url(ref)
+            return data
 
         local_ref = self.resolve_local_image_ref(ref)
         if local_ref:
@@ -275,10 +277,6 @@ class ImageMediaService:
             content_type = guessed
         return self.build_data_url(content_type, resp.content)
 
-    def decode_data_url(self, data_url: str) -> bytes:
-        _, data = self.parse_data_url(data_url)
-        return data
-
     def mime_to_ext(self, mime: str) -> str:
         if mime == "image/jpeg":
             return ".jpg"
@@ -290,15 +288,6 @@ class ImageMediaService:
 
     def resolve_local_image_ref(self, value: str) -> str | None:
         return self.local_ref_resolver.resolve_local_image_ref(value)
-
-    def candidate_local_paths(self, value: str) -> list[Path]:
-        return self.local_ref_resolver.candidate_local_paths(value)
-
-    def candidate_data_roots(self) -> list[Path]:
-        return self.local_ref_resolver.candidate_data_roots()
-
-    def resolve_attachment_token(self, token: str) -> str | None:
-        return self.local_ref_resolver.resolve_attachment_token(token)
 
     def _collect_image_refs(self, obj: Any, refs: list[str]) -> None:
         if obj is None:

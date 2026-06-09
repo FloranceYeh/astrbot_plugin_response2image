@@ -10,6 +10,10 @@ from .generation import GeneratedImageData, GenerationResult
 PLUGIN_RESPONSE_PREFIX = "[r2i]"
 
 
+class SendMessageError(RuntimeError):
+    """Raised when sending a message to the current conversation fails."""
+
+
 class Sender:
     def prefix(self, text: str) -> str:
         return f"{PLUGIN_RESPONSE_PREFIX} {text}"
@@ -76,13 +80,20 @@ class Sender:
         log_level: str = "info",
     ) -> None:
         self.log(log_level, text)
-        await self.send(event, self.plain_result(event, text))
+        await self.send_best_effort(event, self.plain_result(event, text))
 
     async def send(self, event: AstrMessageEvent, response: Any) -> None:
         try:
             await event.send(response)
         except Exception as exc:
             self.log("warning", f"发送消息失败: {exc}")
+            raise SendMessageError("发送消息失败。") from exc
+
+    async def send_best_effort(self, event: AstrMessageEvent, response: Any) -> None:
+        try:
+            await self.send(event, response)
+        except SendMessageError:
+            return
 
     def log(self, level: str, message: str) -> None:
         log_fn = getattr(logger, level, logger.info)

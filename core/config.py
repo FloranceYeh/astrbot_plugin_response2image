@@ -2,6 +2,25 @@ from typing import Any
 
 import httpx
 
+try:
+    from .messages import (
+        base_url_required,
+        base_url_scheme_invalid,
+        config_keep_count_invalid,
+        config_retry_count_invalid,
+        config_value_invalid,
+        config_value_must_be_positive,
+    )
+except ImportError:
+    from core.messages import (
+        base_url_required,
+        base_url_scheme_invalid,
+        config_keep_count_invalid,
+        config_retry_count_invalid,
+        config_value_invalid,
+        config_value_must_be_positive,
+    )
+
 
 class PluginConfigReader:
     def __init__(self, config: Any):
@@ -33,36 +52,36 @@ class PluginConfigReader:
         try:
             timeout_seconds = int(self.get("timeout_seconds", 120))
         except (TypeError, ValueError) as exc:
-            raise ValueError("插件配置 timeout_seconds 无效。") from exc
+            raise ValueError(config_value_invalid("timeout_seconds")) from exc
         if timeout_seconds <= 0:
-            raise ValueError("插件配置 timeout_seconds 必须大于 0。")
+            raise ValueError(config_value_must_be_positive("timeout_seconds"))
         return httpx.Timeout(timeout_seconds)
 
     def get_generation_retry_count(self) -> int:
         try:
             retry_count = int(self.get("generation_retry_count", 2))
         except (TypeError, ValueError) as exc:
-            raise ValueError("插件配置 generation_retry_count 无效。") from exc
+            raise ValueError(config_value_invalid("generation_retry_count")) from exc
         if retry_count >= 0:
             return retry_count
-        raise ValueError("插件配置 generation_retry_count 必须大于或等于 0。")
+        raise ValueError(config_retry_count_invalid())
 
     def get_generated_image_keep_count(self) -> int:
         try:
             keep_count = int(self.get("generated_image_keep_count", -1))
         except (TypeError, ValueError) as exc:
-            raise ValueError("插件配置 generated_image_keep_count 无效。") from exc
+            raise ValueError(config_value_invalid("generated_image_keep_count")) from exc
         if keep_count == -1 or keep_count > 0:
             return keep_count
-        raise ValueError("插件配置 generated_image_keep_count 必须为 -1 或大于 0。")
+        raise ValueError(config_keep_count_invalid())
 
 
 def normalize_base_url(base_url: str) -> str:
     base = base_url.strip()
     if not base:
-        raise ValueError("Base URL 不能为空。")
+        raise ValueError(base_url_required())
     if not base.lower().startswith(("http://", "https://")):
-        raise ValueError("Base URL 必须以 http:// 或 https:// 开头。")
+        raise ValueError(base_url_scheme_invalid())
     base = base.rstrip("/")
     if base.endswith("/v1"):
         base = base[:-3]
