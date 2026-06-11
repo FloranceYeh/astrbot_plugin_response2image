@@ -83,7 +83,7 @@ class GenerationStreamHandler:
         try:
             return json.loads(data_str)
         except json.JSONDecodeError:
-            self.sender.log("warning", f"\u65e0\u6cd5\u89e3\u6790\u6d41\u5f0f\u54cd\u5e94\u6570\u636e: {data_str[:200]}")
+            self.sender.log("warning", f"无法解析流式响应数据: {data_str[:200]}")
             return None
 
     async def _build_outcome_from_payload(
@@ -104,7 +104,7 @@ class GenerationStreamHandler:
             image_bytes = await self.media_service.read_image_bytes(image_ref, client)
         except ValueError as exc:
             image_error_state["value"] = str(exc)
-            self.sender.log("warning", f"\u56fe\u7247\u89e3\u6790\u5931\u8d25: {exc}")
+            self.sender.log("warning", f"图片解析失败: {exc}")
             return None
 
         return self._build_generated_image_outcome(

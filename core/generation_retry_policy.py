@@ -10,15 +10,15 @@ except ImportError:
 
 def format_retry_notice(context: RetryContext) -> str:
     return (
-        f"\u8bf7\u6c42\u5f02\u5e38\uff0c\u51c6\u5907\u5728 {context.delay_seconds:.0f} \u79d2\u540e\u91cd\u8bd5"
-        f"\uff08\u7b2c {context.attempt_index + 1}/{context.retry_count} \u6b21\uff09\uff1a{context.detail}"
+        f"请求异常，准备在 {context.delay_seconds:.0f} 秒后重试"
+        f"（第 {context.attempt_index + 1}/{context.retry_count} 次）：{context.detail}"
     )
 
 
 def summarize_error_body(body: bytes) -> str:
     text = body.decode("utf-8", "ignore").strip()
     if not text:
-        return "\u7a7a\u54cd\u5e94"
+        return "空响应"
 
     try:
         payload = json.loads(text)
@@ -52,7 +52,7 @@ def should_retry_http_error(status_code: int, detail: str) -> bool:
         return True
 
     normalized = "".join(detail.split())
-    return "\u67e5\u8be2api\u4f7f\u7528" in normalized and "\u6ca1\u6709\u672c\u6b21\u7684\u8bb0\u5f55" in normalized
+    return "查询api使用" in normalized and "没有本次的记录" in normalized
 
 
 def classify_retry_exception(exc: Exception) -> tuple[str, bool] | None:
