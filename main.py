@@ -8,6 +8,7 @@ try:
     from .core.config import PluginConfigReader
     from .core.generation import (
         GenerationMode,
+        GenerationResult,
         GenerationTask,
         RefInput,
         compose_command_fallback_prompt,
@@ -26,6 +27,7 @@ except ImportError:
     from core.config import PluginConfigReader
     from core.generation import (
         GenerationMode,
+        GenerationResult,
         GenerationTask,
         RefInput,
         compose_command_fallback_prompt,
