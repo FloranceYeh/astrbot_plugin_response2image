@@ -1,4 +1,3 @@
-import json
 import time
 
 import httpx
@@ -17,12 +16,17 @@ try:
         PreparedGenerationRequest,
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
-        format_elapsed_seconds,
         get_reference_prompt_lines,
         merge_refs,
-        mode_label,
         resolve_mode,
     )
+    from .generation_retry_policy import (
+        classify_retry_exception,
+        format_retry_notice,
+        should_retry_http_error,
+        summarize_error_body,
+    )
+    from .generation_stream_handler import GenerationStreamHandler
     from .media import ImageMediaService
     from .messages import (
         edit_mode_requires_ref,
@@ -50,12 +54,17 @@ except ImportError:
         PreparedGenerationRequest,
         WHITE_REFERENCE_IMAGE_NAME,
         build_payload,
-        format_elapsed_seconds,
         get_reference_prompt_lines,
         merge_refs,
-        mode_label,
         resolve_mode,
     )
+    from core.generation_retry_policy import (
+        classify_retry_exception,
+        format_retry_notice,
+        should_retry_http_error,
+        summarize_error_body,
+    )
+    from core.generation_stream_handler import GenerationStreamHandler
     from core.media import ImageMediaService
     from core.messages import (
         edit_mode_requires_ref,
@@ -83,9 +92,9 @@ class GenerationService:
     ):
         self.config_reader = config_reader
         self.media_service = media_service
-        self.image_store = image_store
         self.selfie_ref_service = selfie_ref_service
         self.sender = sender
+        self.stream_handler = GenerationStreamHandler(media_service, image_store, sender)
 
     async def generate_result(
         self,
@@ -105,14 +114,8 @@ class GenerationService:
         except ValueError as exc:
             return self.sender.text_result(event, str(exc))
 
-        url = runtime_config.base_url + "/v1/responses"
-        headers = {
-            "Authorization": f"Bearer {runtime_config.api_key}",
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-        }
-        image_error: str | None = None
         started_at = time.perf_counter()
+        image_error: str | None = None
 
         try:
             async with httpx.AsyncClient(timeout=runtime_config.timeout) as client:
@@ -123,8 +126,6 @@ class GenerationService:
                         task,
                         request,
                         runtime_config,
-                        url,
-                        headers,
                         started_at,
                         image_error_state={"value": image_error},
                     )
@@ -204,8 +205,6 @@ class GenerationService:
         task: GenerationTask,
         request: PreparedGenerationRequest,
         runtime_config: GenerationRuntimeConfig,
-        url: str,
-        headers: dict[str, str],
         started_at: float,
         *,
         image_error_state: dict[str, str | None],
@@ -214,54 +213,55 @@ class GenerationService:
         if request.resolved_mode in {"edit", "selfie"} and not ref_images:
             raise ValueError(ref_image_unavailable())
 
-        payload = build_payload(
-            task.prompt,
-            runtime_config.model,
-            ref_images,
-            image_size=task.image_size,
-            reference_lines=self._get_reference_prompt_lines(request.resolved_mode),
-        )
         return await run_with_retries(
             self._build_attempt(
                 client,
                 event,
-                url,
-                headers,
-                payload,
-                runtime_config,
-                request.resolved_mode,
-                started_at,
+                payload=build_payload(
+                    task.prompt,
+                    runtime_config.model,
+                    ref_images,
+                    image_size=task.image_size,
+                    reference_lines=self._get_reference_prompt_lines(request.resolved_mode),
+                ),
+                runtime_config=runtime_config,
+                resolved_mode=request.resolved_mode,
+                started_at=started_at,
                 image_error_state=image_error_state,
             ),
             retry_count=runtime_config.retry_count,
-            get_delay_seconds=self._get_retry_delay_seconds,
             on_retry=lambda context: self._notify_retry(event, context),
-            classify_exception=self._classify_retry_exception,
+            classify_exception=classify_retry_exception,
         )
 
     def _build_attempt(
         self,
         client: httpx.AsyncClient,
         event: AstrMessageEvent,
-        url: str,
-        headers: dict[str, str],
+        *,
         payload: dict[str, object],
         runtime_config: GenerationRuntimeConfig,
         resolved_mode: GenerationMode,
         started_at: float,
-        *,
         image_error_state: dict[str, str | None],
     ):
+        url = runtime_config.base_url + "/v1/responses"
+        headers = {
+            "Authorization": f"Bearer {runtime_config.api_key}",
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+        }
+
         async def attempt() -> GenerationAttemptOutcome:
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 if response.status_code >= 400:
                     body = await response.aread()
-                    detail = f"HTTP {response.status_code} {self._summarize_error_body(body)}"
+                    detail = f"HTTP {response.status_code} {summarize_error_body(body)}"
                     raise RetrySignalError(
                         detail,
-                        retryable=self._should_retry_http_error(response.status_code, detail),
+                        retryable=should_retry_http_error(response.status_code, detail),
                     )
-                return await self._stream_response(
+                return await self.stream_handler.stream_response(
                     response,
                     client,
                     event,
@@ -273,124 +273,6 @@ class GenerationService:
 
         return attempt
 
-    async def _stream_response(
-        self,
-        response: httpx.Response,
-        client: httpx.AsyncClient,
-        event: AstrMessageEvent,
-        runtime_config: GenerationRuntimeConfig,
-        resolved_mode: GenerationMode,
-        started_at: float,
-        image_error_state: dict[str, str | None],
-    ) -> GenerationAttemptOutcome:
-        async for line in response.aiter_lines():
-            data_str = self._extract_stream_data(line)
-            if data_str is None:
-                continue
-            if data_str == "[DONE]":
-                break
-            payload = self._parse_stream_payload(data_str)
-            if payload is None:
-                continue
-            outcome = await self._build_outcome_from_payload(
-                client,
-                event,
-                payload,
-                runtime_config,
-                resolved_mode,
-                started_at,
-                image_error_state,
-            )
-            if outcome is not None:
-                return outcome
-
-        return GenerationAttemptOutcome(
-            response=None,
-            image_error=image_error_state["value"],
-        )
-
-    def _extract_stream_data(self, line: str) -> str | None:
-        normalized = line.strip()
-        if not normalized or normalized.startswith("event: "):
-            return None
-        if not normalized.startswith("data: "):
-            return None
-        return normalized[6:]
-
-    def _parse_stream_payload(self, data_str: str) -> object | None:
-        try:
-            return json.loads(data_str)
-        except json.JSONDecodeError:
-            self.sender.log("warning", f"无法解析数据块: {data_str[:200]}")
-            return None
-
-    async def _build_outcome_from_payload(
-        self,
-        client: httpx.AsyncClient,
-        event: AstrMessageEvent,
-        payload: object,
-        runtime_config: GenerationRuntimeConfig,
-        resolved_mode: GenerationMode,
-        started_at: float,
-        image_error_state: dict[str, str | None],
-    ) -> GenerationAttemptOutcome | None:
-        image_ref = self.media_service.extract_image_ref(payload)
-        if not image_ref:
-            return None
-
-        try:
-            image_bytes = await self.media_service.read_image_bytes(image_ref, client)
-        except ValueError as exc:
-            image_error_state["value"] = str(exc)
-            self.sender.log("warning", f"图片解析失败: {exc}")
-            return None
-
-        return self._build_generated_image_outcome(
-            event,
-            image_bytes,
-            runtime_config,
-            resolved_mode,
-            started_at,
-            image_error_state["value"],
-        )
-
-    def _build_generated_image_outcome(
-        self,
-        event: AstrMessageEvent,
-        image_bytes: bytes,
-        runtime_config: GenerationRuntimeConfig,
-        resolved_mode: GenerationMode,
-        started_at: float,
-        image_error: str | None,
-    ) -> GenerationAttemptOutcome:
-        file_path = self.image_store.write_image(
-            image_bytes,
-            runtime_config.generated_image_keep_count,
-        )
-        size_str = self.media_service.format_size(len(image_bytes))
-        elapsed_seconds = time.perf_counter() - started_at
-        elapsed_text = format_elapsed_seconds(elapsed_seconds)
-        status_text = f"{mode_label(resolved_mode)} {size_str} {elapsed_text}"
-        return GenerationAttemptOutcome(
-            response=self.sender.image_result(
-                event,
-                file_path=file_path,
-                size_bytes=len(image_bytes),
-                size_text=size_str,
-                mode=resolved_mode,
-                status_text=status_text,
-                elapsed_seconds=elapsed_seconds,
-                elapsed_text=elapsed_text,
-                send_generated_image_in_chat=runtime_config.send_generated_image_in_chat,
-            ),
-            image_error=image_error,
-        )
-
-    def _classify_retry_exception(self, exc: Exception) -> tuple[str, bool] | None:
-        if isinstance(exc, httpx.TransportError):
-            return (f"{exc}", True)
-        return None
-
     async def _notify_retry(
         self,
         event: AstrMessageEvent,
@@ -398,52 +280,9 @@ class GenerationService:
     ) -> None:
         await self.sender.log_and_send(
             event,
-            (
-                f"请求异常，准备在 {context.delay_seconds:.0f} 秒后重试"
-                f"（第 {context.attempt_index + 1}/{context.retry_count} 次）：{context.detail}"
-            ),
+            format_retry_notice(context),
             log_level="warning",
         )
-
-    def _summarize_error_body(self, body: bytes) -> str:
-        text = body.decode("utf-8", "ignore").strip()
-        if not text:
-            return "空响应"
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            return text[:500]
-
-        message = self._extract_error_message(payload)
-        if message:
-            return message[:500]
-        return text[:500]
-
-    def _extract_error_message(self, payload: object) -> str | None:
-        if isinstance(payload, str):
-            text = payload.strip()
-            return text or None
-        if isinstance(payload, dict):
-            for key in ("error", "message", "detail"):
-                value = payload.get(key)
-                message = self._extract_error_message(value)
-                if message:
-                    return message
-        if isinstance(payload, list):
-            for item in payload:
-                message = self._extract_error_message(item)
-                if message:
-                    return message
-        return None
-
-    def _should_retry_http_error(self, status_code: int, detail: str) -> bool:
-        if status_code in {408, 409, 425, 429} or status_code >= 500:
-            return True
-        normalized = "".join(detail.split())
-        return "查询api使用" in normalized and "没有本次的记录" in normalized
-
-    def _get_retry_delay_seconds(self, attempt_index: int) -> float:
-        return float(min(attempt_index + 1, 5))
 
     def _get_reference_prompt_lines(self, mode: GenerationMode) -> list[str]:
         if mode == "selfie":
